@@ -88,6 +88,51 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// Generate endpoint — called by the builder tool to create system prompts
+app.post('/generate', async (req, res) => {
+  const { clientData } = req.body;
+
+  if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
+    return res.status(400).json({ error: 'clientData is required' });
+  }
+
+  const systemPromptRequest = `You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ bot.
+
+The system prompt you write must:
+- Start with the bot's name and role
+- Include all business details naturally woven in
+- Know all the FAQs and answers
+- Understand the services, pricing, and hours
+- Follow the specified tone exactly
+- Know what to never say
+- Know the fallback behavior (what to do when it can't answer)
+- Be written as if speaking directly to the AI model (second person: "You are...")
+- Be professional, thorough, and immediately usable with no editing needed
+- End with a reminder to keep responses concise and helpful
+
+Only output the system prompt text, nothing else. No preamble, no explanation.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: systemPromptRequest,
+      messages: [{ role: 'user', content: clientData }],
+    });
+
+    const generatedPrompt = response.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('');
+
+    res.json({ prompt: generatedPrompt });
+
+  } catch (err) {
+    console.error('[Generate Error]', err.message);
+    res.status(500).json({ error: 'Generation failed: ' + err.message });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
