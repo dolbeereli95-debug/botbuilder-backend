@@ -132,7 +132,24 @@ Only output the system prompt text, nothing else. No preamble, no explanation.`;
     res.status(500).json({ error: 'Generation failed: ' + err.message });
   }
 });
-
+app.post('/generate', async (req, res) => {
+  const { clientData } = req.body;
+  if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
+    return res.status(400).json({ error: 'clientData is required' });
+  }
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: 'You are a bot-building expert. Generate a complete system prompt for a customer FAQ bot. Output only the system prompt, nothing else.',
+      messages: [{ role: 'user', content: clientData }],
+    });
+    const generatedPrompt = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    res.json({ prompt: generatedPrompt });
+  } catch (err) {
+    res.status(500).json({ error: 'Generation failed: ' + err.message });
+  }
+});
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
