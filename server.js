@@ -1,4 +1,4 @@
-// BotBuilder Backend Server v2
+// BotBuilder Backend Server
 // Deploy this ONCE on Railway.app (or Render.com) — it handles ALL your clients.
 // 
 // Setup:
@@ -23,8 +23,11 @@ const PORT = process.env.PORT || 3000;
 const anthropic = new Anthropic();
 
 // Middleware
-app.use(cors()); // Allows any website to use this backend
-app.use(express.json({ limit: '50kb' }));
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));app.use(express.json({ limit: '50kb' }));
 
 // Health check
 app.get('/', (req, res) => {
