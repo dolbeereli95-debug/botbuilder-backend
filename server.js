@@ -14,7 +14,8 @@
 
 const express = require('express');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
+const Anthropic = require('@anthropic-ai/sdk');const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -153,7 +154,36 @@ app.post('/generate', async (req, res) => {
     res.status(500).json({ error: 'Generation failed: ' + err.message });
   }
 });
-// 404 handler
+// 404 handler // Lead capture endpoint — called when bot collects a lead
+app.post('/lead', async (req, res) => {
+  const { name, phone, jobType, urgency, businessEmail, businessName } = req.body;
+
+  if (!name || !phone || !businessEmail) {
+    return res.status(400).json({ error: 'name, phone and businessEmail are required' });
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'leads@resend.dev',
+      to: businessEmail,
+      subject: `New Lead from ${businessName} Bot — ${name}`,
+      html: `
+        <h2>New Lead Captured!</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Phone:</strong> ${phone}</p>
+        <p><strong>Job Type:</strong> ${jobType || 'Not specified'}</p>
+        <p><strong>Urgency:</strong> ${urgency || 'Not specified'}</p>
+        <p><em>Captured by your ${businessName} chatbot</em></p>
+      `
+    });
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error('[Lead Error]', err.message);
+    res.status(500).json({ error: 'Failed to send lead: ' + err.message });
+  }
+});
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
