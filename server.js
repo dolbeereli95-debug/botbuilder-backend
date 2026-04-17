@@ -134,7 +134,25 @@ Only output the system prompt text, nothing else. No preamble, no explanation.`;
 });
 
 // 404 handler
-app.use((req, res) => {
+
+
+// /review-lead — Review bot negative feedback email
+app.post('/review-lead', async (req, res) => {
+  const { name, contact, feedback, businessEmail, businessName } = req.body;
+  if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from:'onboarding@resend.dev',
+        to: businessEmail,
+        subject: `⚠️ Private Feedback Received — ${businessName || 'your business'}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
