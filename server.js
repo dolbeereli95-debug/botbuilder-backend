@@ -14,8 +14,7 @@
 
 const express = require('express');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,11 +23,8 @@ const PORT = process.env.PORT || 3000;
 const anthropic = new Anthropic();
 
 // Middleware
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));app.use(express.json({ limit: '50kb' }));
+app.use(cors()); // Allows any website to use this backend
+app.use(express.json({ limit: '50kb' }));
 
 // Health check
 app.get('/', (req, res) => {
@@ -94,13 +90,13 @@ app.post('/chat', async (req, res) => {
 
 // Generate endpoint — called by the builder tool to create system prompts
 app.post('/generate', async (req, res) => {
-  const { clientData } = req.body;
+  const { clientData, systemPromptRequest: customSystemPrompt } = req.body;
 
   if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
     return res.status(400).json({ error: 'clientData is required' });
   }
 
-  const systemPromptRequest = `You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ bot.
+  const systemPromptRequest = customSystemPrompt || `You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ bot.
 
 The system prompt you write must:
 - Start with the bot's name and role
@@ -136,54 +132,8 @@ Only output the system prompt text, nothing else. No preamble, no explanation.`;
     res.status(500).json({ error: 'Generation failed: ' + err.message });
   }
 });
-app.post('/generate', async (req, res) => {
-  const { clientData } = req.body;
-  if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
-    return res.status(400).json({ error: 'clientData is required' });
-  }
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: 'You are a bot-building expert. Generate a complete system prompt for a customer FAQ bot. Output only the system prompt, nothing else.',
-      messages: [{ role: 'user', content: clientData }],
-    });
-    const generatedPrompt = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    res.json({ prompt: generatedPrompt });
-  } catch (err) {
-    res.status(500).json({ error: 'Generation failed: ' + err.message });
-  }
-});
-// 404 handler // Lead capture endpoint — called when bot collects a lead
-app.post('/lead', async (req, res) => {
-  const { name, phone, jobType, urgency, businessEmail, businessName } = req.body;
 
-  if (!name || !phone || !businessEmail) {
-    return res.status(400).json({ error: 'name, phone and businessEmail are required' });
-  }
-
-  try {
-    await resend.emails.send({
-      from: 'leads@resend.dev',
-      to: businessEmail,
-      subject: `New Lead from ${businessName} Bot — ${name}`,
-      html: `
-        <h2>New Lead Captured!</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Phone:</strong> ${phone}</p>
-        <p><strong>Job Type:</strong> ${jobType || 'Not specified'}</p>
-        <p><strong>Urgency:</strong> ${urgency || 'Not specified'}</p>
-        <p><em>Captured by your ${businessName} chatbot</em></p>
-      `
-    });
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error('[Lead Error]', err.message);
-    res.status(500).json({ error: 'Failed to send lead: ' + err.message });
-  }
-});
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
