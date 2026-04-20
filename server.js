@@ -58,7 +58,7 @@ app.post('/generate', async (req, res) => {
   const systemPromptRequest = customSystemPrompt || 'You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ bot. The system prompt you write must: Start with the bot name and role, include all business details naturally woven in, know all the FAQs and answers, understand the services pricing and hours, follow the specified tone exactly, know what to never say, know the fallback behavior, be written as if speaking directly to the AI model in second person, be professional thorough and immediately usable with no editing needed, and end with a reminder to keep responses concise and helpful. Only output the system prompt text, nothing else. No preamble, no explanation.';
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1000,
       system: systemPromptRequest,
       messages: [{ role: 'user', content: clientData }],
@@ -99,7 +99,69 @@ app.post('/lead', async (req, res) => {
   }
 });
 
-app.post('/review-lead', async (req, res) => {
+app.post('/signup', async (req, res) => {
+  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg } = req.body;
+  if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
+
+  const pkgLabel = pkg === 'bundle' ? 'Full Bundle — $350/mo' : 'Website AI Bot — $225/mo';
+
+  const botBuilderData = [
+    '===== BOTBUILDER CLIENT DATA =====', '',
+    'BUSINESS NAME: ' + (bizName || 'Not provided'),
+    'BOT NAME: ' + (bizName || 'Not provided') + ' Assistant',
+    'OWNER NAME: ' + (ownerName || 'Not provided'),
+    'OWNER EMAIL: ' + (email || 'Not provided'),
+    'OWNER PHONE: ' + (phone || 'Not provided'),
+    'WEBSITE: ' + (website || 'Not provided'), '',
+    'INDUSTRY: ' + (industry || 'Not provided'),
+    'PACKAGE SELECTED: ' + pkgLabel, '',
+    'SERVICES OFFERED:', (services || 'Not provided'), '',
+    'BUSINESS HOURS: ' + (hours || 'Not provided'),
+    'SERVICE AREA: ' + (area || 'Not provided'), '',
+    'FREQUENTLY ASKED QUESTIONS:', (faqs || 'Not provided'), '',
+    'BOT TONE: ' + (tone || 'Friendly and casual'), '',
+    '===== END OF CLIENT DATA ====='
+  ].join('\n');
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'netifybuilds@gmail.com',
+        subject: '🚀 New Signup: ' + bizName + ' — ' + pkgLabel,
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
+          <h2 style="color:#0A2540;margin-bottom:4px;">New Client Signup</h2>
+          <p style="color:#64748b;font-size:14px;margin-bottom:24px;">Someone just signed up on your website. Here's everything you need to build their bot.</p>
+          <div style="background:white;border-radius:10px;padding:20px;border:1px solid #e5e7eb;margin-bottom:20px;">
+            <p style="margin:0 0 8px"><strong>Name:</strong> ${ownerName || 'Not provided'}</p>
+            <p style="margin:0 0 8px"><strong>Business:</strong> ${bizName}</p>
+            <p style="margin:0 0 8px"><strong>Email:</strong> ${email}</p>
+            <p style="margin:0 0 8px"><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+            <p style="margin:0 0 8px"><strong>Website:</strong> ${website || 'Not provided'}</p>
+            <p style="margin:0"><strong>Package:</strong> ${pkgLabel}</p>
+          </div>
+          <div style="background:#0A2540;border-radius:10px;padding:20px;">
+            <p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">BotBuilder Data — paste directly into builder tool</p>
+            <pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">${botBuilderData}</pre>
+          </div>
+          <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
+        </div>`,
+      }),
+    });
+    if (!response.ok) return res.status(500).json({ error: 'Email send failed' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Signup Error]', err.message);
+    res.status(500).json({ error: 'Signup email failed' });
+  }
+});
+
+
   const { name, contact, feedback, businessEmail, businessName } = req.body;
   if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
   try {
