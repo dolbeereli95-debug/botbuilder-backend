@@ -190,8 +190,9 @@ app.post('/signup', async (req, res) => {
 
 
 app.post('/scan', async (req, res) => {
-  const { url, botType, leadEmail } = req.body;
+  const { url, botType, leadEmail, tone } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
+  const botTone = tone || 'Friendly and casual';
 
   try {
     // Fetch the website
@@ -230,7 +231,7 @@ The system prompt you write must:
 - Start with the bot name and role (use the business name you find)
 - Include all business details naturally woven in
 - Know all the services, FAQs, hours, pricing mentioned on the site
-- Follow a friendly and professional tone
+- Follow a ${botTone} tone throughout every interaction
 - Know what to never say (never quote prices not on the site, never mention competitors)
 - Include after-hours behavior based on the hours found
 ${isLeadGen ? `- Include lead capture: naturally collect name and phone number, then output LEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified] at the very end of the response. Never show this trigger to the customer. Never ask for contact info again once collected.` : '- Know the fallback behavior (direct to phone/email when it cannot answer)'}
