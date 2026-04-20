@@ -162,6 +162,7 @@ app.post('/signup', async (req, res) => {
 });
 
 
+app.post('/review-lead', async (req, res) => {
   const { name, contact, feedback, businessEmail, businessName } = req.body;
   if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
   try {
