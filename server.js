@@ -132,7 +132,7 @@ app.post('/signup', async (req, res) => {
       },
       body: JSON.stringify({
         from: 'onboarding@resend.dev',
-        to: 'netifybuilds@gmail.com',
+        to: 'dolbeereli95@gmail.com',
         subject: '🚀 New Signup: ' + bizName + ' — ' + pkgLabel,
         html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
           <h2 style="color:#0A2540;margin-bottom:4px;">New Client Signup</h2>
