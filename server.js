@@ -30,11 +30,17 @@ app.post('/chat', async (req, res) => {
   if (cleanMessages[0].role !== 'user') {
     return res.status(400).json({ error: 'First message must be from user' });
   }
+
+  // Inject current date/time so bot knows if it's after hours
+  const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
+  const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.`;
+  const enrichedPrompt = systemPrompt + timeInjection;
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      system: systemPrompt,
+      max_tokens: 600,
+      system: enrichedPrompt,
       messages: cleanMessages,
     });
     const reply = response.content
@@ -55,11 +61,26 @@ app.post('/generate', async (req, res) => {
   if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
     return res.status(400).json({ error: 'clientData is required' });
   }
-  const systemPromptRequest = customSystemPrompt || 'You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ bot. The system prompt you write must: Start with the bot name and role, include all business details naturally woven in, know all the FAQs and answers, understand the services pricing and hours, follow the specified tone exactly, know what to never say, know the fallback behavior, be written as if speaking directly to the AI model in second person, be professional thorough and immediately usable with no editing needed, and end with a reminder to keep responses concise and helpful. Only output the system prompt text, nothing else. No preamble, no explanation.';
+  const systemPromptRequest = customSystemPrompt || `You are a bot-building expert. Given client business data, generate a complete, production-ready AI chatbot system prompt for a customer-facing FAQ and lead generation bot.
+
+The system prompt you write must:
+- Start with the bot name and role
+- Include all business details naturally woven in
+- Know all the FAQs and answers thoroughly
+- Understand the services, pricing, and hours
+- Follow the specified tone exactly
+- Know what to never say
+- Include after-hours behavior: the bot should know the business hours and when someone contacts outside those hours, acknowledge it warmly and let them know the team will follow up first thing when they open — while still capturing the lead
+- Include clear lead capture instructions: naturally collect name, phone number, job type, and urgency through conversation. Once name AND phone are collected, output this exact trigger at the very end of the response: LEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified]. The trigger must always use this exact format with pipe separators and no extra spaces. Never show the trigger to the customer. Never ask for contact info again if already collected in the conversation.
+- Be written as if speaking directly to the AI model in second person
+- Be professional, thorough, and immediately usable with no editing needed
+- End with a reminder to keep responses concise and helpful
+
+Only output the system prompt text, nothing else. No preamble, no explanation.`;
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
+      max_tokens: 2500,
       system: systemPromptRequest,
       messages: [{ role: 'user', content: clientData }],
     });
@@ -100,15 +121,16 @@ app.post('/lead', async (req, res) => {
 });
 
 app.post('/signup', async (req, res) => {
-  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg } = req.body;
+  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg, differentiators, licensing, emergency, seasonal, botPersonality } = req.body;
   if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
 
   const pkgLabel = pkg === 'bundle' ? 'Full Bundle — $350/mo' : 'Website AI Bot — $225/mo';
+  const botName = botPersonality && botPersonality !== 'Not provided' ? botPersonality : bizName + ' Assistant';
 
   const botBuilderData = [
     '===== BOTBUILDER CLIENT DATA =====', '',
     'BUSINESS NAME: ' + (bizName || 'Not provided'),
-    'BOT NAME: ' + (bizName || 'Not provided') + ' Assistant',
+    'BOT NAME: ' + botName,
     'OWNER NAME: ' + (ownerName || 'Not provided'),
     'OWNER EMAIL: ' + (email || 'Not provided'),
     'OWNER PHONE: ' + (phone || 'Not provided'),
@@ -119,7 +141,12 @@ app.post('/signup', async (req, res) => {
     'BUSINESS HOURS: ' + (hours || 'Not provided'),
     'SERVICE AREA: ' + (area || 'Not provided'), '',
     'FREQUENTLY ASKED QUESTIONS:', (faqs || 'Not provided'), '',
-    'BOT TONE: ' + (tone || 'Friendly and casual'), '',
+    'WHAT SETS THEM APART:', (differentiators && differentiators !== 'Not provided' ? differentiators : 'Not provided'), '',
+    'LICENSING / INSURANCE / WARRANTY: ' + (licensing && licensing !== 'Not provided' ? licensing : 'Not provided'),
+    'EMERGENCY SERVICES: ' + (emergency && emergency !== 'Not provided' ? emergency : 'Not provided'),
+    'SEASONAL NOTES: ' + (seasonal && seasonal !== 'Not provided' ? seasonal : 'Not provided'), '',
+    'BOT TONE: ' + (tone || 'Friendly and casual'),
+    'BOT PERSONALITY NAME: ' + botName, '',
     '===== END OF CLIENT DATA ====='
   ].join('\n');
 
@@ -158,6 +185,84 @@ app.post('/signup', async (req, res) => {
   } catch (err) {
     console.error('[Signup Error]', err.message);
     res.status(500).json({ error: 'Signup email failed' });
+  }
+});
+
+
+app.post('/scan', async (req, res) => {
+  const { url, botType, leadEmail } = req.body;
+  if (!url) return res.status(400).json({ error: 'url is required' });
+
+  try {
+    // Fetch the website
+    const siteRes = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BotBuilder/1.0)' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!siteRes.ok) return res.status(400).json({ error: 'Could not fetch that URL. Make sure it is publicly accessible.' });
+
+    const html = await siteRes.text();
+
+    // Strip HTML tags down to readable text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+      .trim()
+      .substring(0, 12000); // cap at 12k chars to stay within token limits
+
+    if (text.length < 100) return res.status(400).json({ error: 'Not enough content found on that page. Try a different URL.' });
+
+    // Use Claude to extract business data and generate system prompt in one step
+    const isLeadGen = botType === 'leadgen';
+    const scanPrompt = `You are a bot-building expert. A business website has been scraped and the text content is below. 
+
+Your job is to:
+1. Extract all useful business information (name, services, hours, location, FAQs, pricing, contact info, what makes them unique, emergency services, licensing)
+2. Use that information to generate a complete, production-ready AI chatbot system prompt for a customer-facing ${isLeadGen ? 'Lead Generation' : 'FAQ'} bot
+
+The system prompt you write must:
+- Start with the bot name and role (use the business name you find)
+- Include all business details naturally woven in
+- Know all the services, FAQs, hours, pricing mentioned on the site
+- Follow a friendly and professional tone
+- Know what to never say (never quote prices not on the site, never mention competitors)
+- Include after-hours behavior based on the hours found
+${isLeadGen ? `- Include lead capture: naturally collect name and phone number, then output LEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified] at the very end of the response. Never show this trigger to the customer. Never ask for contact info again once collected.` : '- Know the fallback behavior (direct to phone/email when it cannot answer)'}
+- Be written in second person (You are...)
+- Be professional, thorough, and immediately usable
+- End with a reminder to keep responses concise and helpful
+
+Only output the system prompt text. Nothing else. No preamble, no explanation, no markdown headers.
+
+WEBSITE CONTENT:
+${text}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2500,
+      messages: [{ role: 'user', content: scanPrompt }],
+    });
+
+    const systemPrompt = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+
+    if (!systemPrompt) return res.status(500).json({ error: 'Failed to generate prompt from website content.' });
+
+    // Try to extract business name for widget generation
+    const bizNameMatch = systemPrompt.match(/You are ([^,\.]+)/i);
+    const bizName = bizNameMatch ? bizNameMatch[1].replace(/the |assistant|bot/gi, '').trim() : 'Business';
+
+    res.json({ prompt: systemPrompt, bizName, url });
+
+  } catch (err) {
+    console.error('[Scan Error]', err.message);
+    if (err.name === 'TimeoutError') return res.status(400).json({ error: 'Website took too long to load. Try again or use the manual form.' });
+    res.status(500).json({ error: 'Scan failed: ' + err.message });
   }
 });
 
