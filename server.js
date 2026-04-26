@@ -367,7 +367,20 @@ app.post('/review-lead', async (req, res) => {
 
 // Simple in-memory store for review logs (persists until server restarts)
 // For production you'd use a database, but this works fine for low volume
-const reviewLogs = {};
+const reviewLogs = {
+  // ── TEST DATA — remove when you have real clients ──
+  'test_business': [
+    { type: 'positive', feedback: 'Technician was on time and very professional', name: 'Sarah M', contact: '', date: new Date(Date.now() - 1 * 24*60*60*1000).toISOString() },
+    { type: 'positive', feedback: 'Great service, will definitely use again', name: 'Mike T', contact: '', date: new Date(Date.now() - 2 * 24*60*60*1000).toISOString() },
+    { type: 'positive', feedback: 'Not specified', name: '', contact: '', date: new Date(Date.now() - 3 * 24*60*60*1000).toISOString() },
+    { type: 'negative', feedback: 'Technician arrived 2 hours late with no call ahead. Very frustrating.', name: 'Dave R', contact: '(937) 555-0198', date: new Date(Date.now() - 4 * 24*60*60*1000).toISOString() },
+    { type: 'positive', feedback: 'Fixed my AC fast, great price', name: 'Jennifer L', contact: '', date: new Date(Date.now() - 5 * 24*60*60*1000).toISOString() },
+    { type: 'positive', feedback: 'Not specified', name: '', contact: '', date: new Date(Date.now() - 6 * 24*60*60*1000).toISOString() },
+    { type: 'negative', feedback: 'The repair didnt fix the problem and I had to call again the next day', name: 'Tom B', contact: 'tom@email.com', date: new Date(Date.now() - 7 * 24*60*60*1000).toISOString() },
+    { type: 'positive', feedback: 'Best HVAC company in Dayton', name: 'Rachel K', contact: '', date: new Date(Date.now() - 8 * 24*60*60*1000).toISOString() },
+  ]
+  // ──────────────────────────────────────────────────
+};
 
 app.post('/log-review', (req, res) => {
   const { businessName, type, feedback, contact, date } = req.body;
