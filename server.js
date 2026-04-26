@@ -45,12 +45,15 @@ app.post('/chat', rateLimit, async (req, res) => {
   }
   const cleanMessages = messages
     .filter(m => m && typeof m.content === 'string' && ['user', 'assistant'].includes(m.role))
-    .slice(-20);
+    .slice(-10);
   if (cleanMessages.length === 0) {
     return res.status(400).json({ error: 'No valid messages found' });
   }
-  if (cleanMessages[0].role !== 'user') {
-    return res.status(400).json({ error: 'First message must be from user' });
+  // Ensure conversation starts with a user message
+  const firstUserIdx = cleanMessages.findIndex(m => m.role === 'user');
+  const trimmedMessages = firstUserIdx > 0 ? cleanMessages.slice(firstUserIdx) : cleanMessages;
+  if (trimmedMessages.length === 0 || trimmedMessages[0].role !== 'user') {
+    return res.status(400).json({ error: 'No valid user message found' });
   }
 
   // Inject current date/time so bot knows if it's after hours
@@ -63,7 +66,7 @@ app.post('/chat', rateLimit, async (req, res) => {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       system: enrichedPrompt,
-      messages: cleanMessages,
+      messages: trimmedMessages,
     });
     const reply = response.content
       .filter(block => block.type === 'text')
