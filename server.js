@@ -297,7 +297,7 @@ app.post('/lead', async (req, res) => {
         from: 'onboarding@resend.dev',
         to: businessEmail,
         bcc: 'dolbeereli95@gmail.com',
-        subject: (urgency && (urgency.toLowerCase().includes('urgent') || urgency.toLowerCase().includes('emergency')) ? '🚨 URGENT — ' : '') + 'New Lead: ' + (name || 'Someone') + ' via ' + (businessName || 'your website'),
+        subject: (urgency && (urgency.toLowerCase().includes('urgent') || urgency.toLowerCase().includes('emergency')) ? '🚨 URGENT — ' : '') + 'New Lead: ' + (name || 'Someone') + (phone ? ' · ' + phone : '') + ' via ' + (businessName || 'your website'),
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:0;background:#f8fafc;border-radius:16px;overflow:hidden;">
           <div style="background:#0A2540;padding:20px 24px;text-align:center;">
             <p style="color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 4px;">New Lead Captured</p>
