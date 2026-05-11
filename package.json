@@ -1,7 +1,7 @@
 {
   "name": "botbuilder-backend",
   "version": "1.0.0",
-  "description": "BotBuilder API backend — handles all client chatbots",
+  "description": "BotBuilder API backend \u2014 handles all client chatbots",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,7 +11,8 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "resend": "^6.10.0"
+    "resend": "^6.10.0",
+    "google-auth-library": "^9.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

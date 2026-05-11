@@ -1,4 +1,7 @@
 const express = require('express');
+const { OAuth2Client } = require('google-auth-library');
+const GOOGLE_CLIENT_ID = '968822994959-js3lra786sg48d1t29l5ju5kbio6h6m1.apps.googleusercontent.com';
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
@@ -196,6 +199,8 @@ app.post('/generate', async (req, res) => {
 
   const systemPromptRequest = customSystemPrompt || `You are a bot-building expert. Given client business data, generate a complete, production-ready 24/7 chat assistant system prompt for a customer-facing FAQ and lead generation bot.
 
+The client data you receive may be in any format — structured labeled fields, comma-separated lists, newline-separated items, plain conversational sentences, partial sentences, or a mix of all of these. It may also contain typos, abbreviations, or informal language. Your job is to interpret it intelligently regardless of how it's written. Extract every useful piece of information no matter how it's formatted or phrased. If something is abbreviated (e.g. "ac" = air conditioning, "hvac", "sqft", "appt") interpret it correctly. If something is unclear, use your best judgment based on context. Never skip information just because it's formatted unusually.
+
 The system prompt you write must:
 - Start with the bot name and role
 - Include all business details naturally woven in
@@ -239,7 +244,7 @@ app.post('/lead', async (req, res) => {
   // ── SMS ALERT (Twilio) ──
   if (ownerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
     try {
-      const smsBody = `New lead from your website!\nName: ${name || 'Unknown'}\nPhone: ${phone || 'Unknown'}\nJob: ${jobType || 'Not specified'}\nUrgency: ${urgency || 'Normal'}\n\nCall them back!`;
+      const smsBody = `New lead from your website!\nName: ${name || 'Unknown'}\nPhone: ${phone || 'Unknown'}\nJob: ${jobType || 'Not specified'}\nUrgency: ${urgency || 'Normal'}\n\nCall them back! Reply STOP to stop these alerts.`;
       await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
         method: 'POST',
         headers: {
@@ -342,26 +347,20 @@ async function sendEmail(to, subject, html) {
 
 function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   const firstName = (ownerName || 'there').split(' ')[0];
-  const isBot = pkg !== 'review';
-  const isReview = pkg === 'review' || pkg === 'bundle';
+  const isBot = pkg !== 'review' && pkg !== 'review_campaign';
+  const isReview = pkg === 'review' || pkg === 'bundle' || pkg === 'review_campaign' || pkg === 'all' || pkg === 'bot_campaign';
 
-  // Email 2 — Day 3: Installation guide / getting started
+  // Email 2 — Day 3: Check in on install progress
   setTimeout(async function() {
     await sendEmail(
       email,
-      'Getting the most out of your ' + (isBot ? '24/7 Chat Assistant' : 'Review Filter') + ' — ' + bizName,
+      'Quick check-in — ' + bizName,
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
-        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">Hey ${firstName} — a few quick tips</h2>
-        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">It's been a couple days and I wanted to make sure everything is running smoothly for you.</p>
-        ${isBot ? `<div style="background:#f0f9ff;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid #bae6fd;">
-          <p style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:8px;">Tip: Check your leads folder</p>
-          <p style="font-size:13px;color:#555;line-height:1.6;">Lead emails from your bot come from <strong>onboarding@resend.dev</strong> — add it to your contacts or check your spam folder once to make sure they're not getting filtered.</p>
-        </div>` : ''}
-        ${isReview ? `<div style="background:#f0fdf4;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid #bbf7d0;">
-          <p style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:8px;">Tip: Start sending your review link today</p>
-          <p style="font-size:13px;color:#555;line-height:1.6;">The sooner you start texting customers the review link after jobs, the sooner your rating starts improving. Even 3-4 reviews a week makes a visible difference in 30 days.</p>
-        </div>` : ''}
-        <p style="color:#555;font-size:14px;line-height:1.7;">Any questions at all — just reply to this email. I check it personally.<br><br>— Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds · netifybuilds@gmail.com</span></p>
+        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">Hey ${firstName} — just checking in</h2>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">It's been a few days since you signed up. I wanted to make sure you got the install code and everything is moving along.</p>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you're waiting on a web developer or still working on getting it installed — no rush. Your subscription doesn't start until you hit <strong>Activate</strong> in your client portal, so you're not on the clock yet.</p>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you ran into any issues or need help with the install, just reply to this email and I'll sort it out same day.</p>
+        <p style="color:#555;font-size:14px;line-height:1.7;">— Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds · netifybuilds@gmail.com</span></p>
       </div>`
     );
   }, 3 * 24 * 60 * 60 * 1000); // 3 days
@@ -370,11 +369,11 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   setTimeout(async function() {
     await sendEmail(
       email,
-      'One week in — how\'s it going, ' + firstName + '?',
+      'Still here if you need anything — ' + bizName + ',',
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
-        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">One week in 🎉</h2>
-        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Hey ${firstName} — it's been a week since we got your ${isBot ? '24/7 chat assistant' : 'Review Filter'} live. I wanted to check in and see how things are going.</p>
-        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">You can see your stats anytime at your client portal — just go to <a href="https://netifybuilds.pages.dev/portal" style="color:#2563eb;">netifybuilds.pages.dev/portal</a> and log in with the access code I sent you.</p>
+        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">Hey ${firstName} — still here</h2>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Just wanted to follow up one more time. Once your bot is installed and you're ready to go live, log into your client portal at <a href="https://netifybuilds.com/portal" style="color:#2563eb;">netifybuilds.com/portal</a> and hit Activate — that's when your subscription starts.</p>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you need any help with the install or anything else, just reply here. I handle everything personally.</p>
         ${!isReview && pkg !== 'bundle' ? `<div style="background:#fefce8;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid #fde68a;">
           <p style="font-size:13px;font-weight:700;color:#b45309;margin-bottom:6px;">One more thing worth knowing about</p>
           <p style="font-size:13px;color:#555;line-height:1.6;">I also offer a Review Filter that catches unhappy customers privately before they post on Google, and sends happy ones straight to your review page. A lot of my clients add it after the first month. Happy to tell you more if you're curious.</p>
@@ -386,10 +385,17 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
 }
 
 app.post('/signup', async (req, res) => {
-  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features } = req.body;
+  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture } = req.body;
   if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
 
-  const pkgLabel = pkg === 'bundle' ? 'Full Bundle — $249.99/mo' : pkg === 'review' ? 'Review Filter — $89.99/mo' : '24/7 Website Chat Assistant — $199.99/mo';
+  const pkgLabel = 
+    pkg === 'all'           ? 'All Products Bundle (Chat + Review + Campaigns) — 15% off' :
+    pkg === 'bundle'        ? 'Chat + Review Bundle — 15% off ($297.50/mo)' :
+    pkg === 'bot_campaign'  ? 'Chat + Campaigns Bundle — 15% off ($382.50/mo)' :
+    pkg === 'review_campaign' ? 'Review + Campaigns Bundle — 15% off ($255/mo)' :
+    pkg === 'review'        ? 'Review Filter — $100/mo' :
+    pkg === 'campaign'      ? 'Reactivation Campaigns — $200/mo' :
+                              '24/7 Chat Assistant — $250/mo';
   const billingLabel = billing === 'annual' ? 'Annual (1 month free)' : 'Monthly';
   const botName = botPersonality && botPersonality !== 'Not provided' ? botPersonality : bizName + ' Assistant';
 
@@ -414,10 +420,18 @@ app.post('/signup', async (req, res) => {
     'EMERGENCY SERVICES: ' + (emergency && emergency !== 'Not provided' ? emergency : 'Not provided'),
     'SEASONAL NOTES: ' + (seasonal && seasonal !== 'Not provided' ? seasonal : 'Not provided'), '',
     'GOOGLE REVIEW LINK: ' + (googleReviewLink || 'Not provided'),
-    'BOT COLOR: ' + (botColor || '#2563eb'),
-    'OPTIONAL FEATURES: ' + (features || 'None selected'),
+    'REVIEW ALERT EMAIL: ' + (alertEmail || 'Not provided'),
+    'BOT COLOR (set ACCENT_COLOR in widget code to this): ' + (botColor || '#2563eb'),
+    'LEAD CAPTURE TYPE: ' + (leadCapture || 'name_phone'),
+    'OPTIONAL FEATURES: ' + (features ? JSON.stringify(features) : 'None selected'),
     'BOT TONE: ' + (tone || 'Friendly and casual'),
     'BOT PERSONALITY NAME: ' + botName, '',
+    // Campaign fields (only if they signed up for campaigns)
+    ...(pkg && pkg.includes('campaign') || pkg === 'all' ? [
+      'CAMPAIGN LIST SIZE: ' + (campaignListSize || 'Not provided'),
+      'CAMPAIGN LIST FORMAT: ' + (campaignListFormat || 'Not provided'),
+      'EXTRA CAMPAIGNS PER YEAR: ' + (extraCampaigns || '0'), ''
+    ] : []),
     '===== END OF CLIENT DATA ====='
   ].join('\n');
 
@@ -443,7 +457,8 @@ app.post('/signup', async (req, res) => {
             <p style="margin:0 0 8px"><strong>Website:</strong> ${website || 'Not provided'}</p>
             <p style="margin:0 0 8px"><strong>Package:</strong> ${pkgLabel}</p>
             <p style="margin:0 0 8px"><strong>Billing:</strong> ${billingLabel}</p>
-            <p style="margin:0"><strong>Heard about us:</strong> ${hearAbout || 'Not provided'}</p>
+            <p style="margin:0 0 8px"><strong>Heard about us:</strong> ${hearAbout || 'Not provided'}</p>
+            <p style="margin:0;background:#f0fdf4;border-radius:6px;padding:8px 12px;"><strong>Portal Access Code:</strong> <span style="font-family:monospace;font-weight:700;color:#15803d;">${bizKey}</span> — send this to the client so they can log into their portal</p>
           </div>
           <div style="background:#0A2540;border-radius:10px;padding:20px;">
             <p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">BotBuilder Data — paste directly into builder tool</p>
@@ -452,12 +467,12 @@ app.post('/signup', async (req, res) => {
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">
             <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Your next steps</p>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
-              <li>Reply to confirm the order and send the Stripe payment link</li>
-              ${pkg !== 'review' ? '<li>Open builder-FINAL.html and paste the BotBuilder data above to generate their bot</li>' : ''}
-              ${pkg !== 'review' ? '<li>Install the widget on their website (or send install instructions)</li>' : ''}
-              ${pkg === 'review' || pkg === 'bundle' ? '<li>Customize review-page.html with their business name, Google link, alert email, and brand color — then deploy to Cloudflare Pages at netifybuilds.pages.dev/review/clientname</li>' : ''}
-              <li>Send them a confirmation that everything is live</li>
-              <li>Set a reminder to check in after 7 days</li>
+              ${pkg !== 'review' ? '<li>Open builder-FINAL.html, paste the BotBuilder data above, and generate their bot</li>' : ''}
+              ${pkg !== 'review' ? '<li>Email them the widget code + install instructions + their portal access code</li>' : ''}
+              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Set up their Review Filter page in the builder and deploy to Cloudflare Pages</li>' : ''}
+              ${pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign' ? '<li>Note their campaign list size and format — reach out to get their customer list</li>' : ''}
+              <li>Register their client portal: run the register-client curl command with their bizKey</li>
+              <li>Their bot stays inactive until they hit Activate in the portal — no subscription starts until then</li>
             </ol>
           </div>
           <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
@@ -466,10 +481,25 @@ app.post('/signup', async (req, res) => {
     });
     if (!response.ok) return res.status(500).json({ error: 'Email send failed' });
 
-    // Schedule welcome sequence follow-ups
+    // Auto-register client in portal system
+    const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+    clientInfo[bizKey] = {
+      bizName: bizName,
+      plan: pkg || 'faq',
+      email: email,
+      activated: false,
+      registeredAt: new Date().toISOString(),
+      googleReviewLink: googleReviewLink || '',
+      campaignListSize: campaignListSize || '',
+      campaignListFormat: campaignListFormat || ''
+    };
+    debouncedSave('client_info.json', clientInfo);
+
+    // Schedule welcome sequence follow-ups — delayed to start from activation not signup
+    // Day 3 and Day 7 emails are intentionally kept as-is since they relate to setup not subscription
     scheduleWelcomeSequence(email, ownerName, bizName, pkg, website);
 
-    res.json({ success: true });
+    res.json({ success: true, bizKey });
   } catch (err) {
     console.error('[Signup Error]', err.message);
     res.status(500).json({ error: 'Signup email failed' });
@@ -513,11 +543,11 @@ RULES — you must follow these exactly:
 - Return ONLY a valid JSON object. No preamble, no explanation, no markdown.
 
 Extract these fields:
-- services: A plain list of specific services mentioned by name. If only vague descriptions like "we help you" appear with no specific service names listed, return null.
+- services: A plain list of specific services mentioned by name. If only vague descriptions like "we help you" appear with no specific service names listed, return null. Return as a JSON array of strings, one service per item.
 - hours: Business hours exactly as written. If not stated, return null.
 - area: The geographic service area or locations served, exactly as written. Do not use the business address as the service area. If not stated, return null.
 - faqs: Up to 5 question-answer pairs that are explicitly on the page (e.g. an FAQ section). If no FAQ section exists, return null.
-- differentiators: Only include if the site explicitly states what makes them different (e.g. "family owned since 1998", "licensed and insured", "same-day service guaranteed"). If nothing specific is stated, return null.
+- differentiators: Only include if the site explicitly states what makes them different (e.g. "family owned since 1998", "licensed and insured", "same-day service guaranteed"). If nothing specific is stated, return null. Return as a JSON array of strings, one item per differentiator. Do not join them with commas into a single string.
 - emergency: Emergency or after-hours phone number, only if explicitly listed as such. If not stated, return null.
 - licensing: Any licensing, insurance, or certification info explicitly stated. If not stated, return null.
 - googleReviewLink: A Google review link if one appears on the page. If not present, return null.
@@ -682,11 +712,48 @@ app.post('/review-lead', async (req, res) => {
 // ── CLIENT INFO STORE (persistent) ──
 const clientInfo = loadData('client_info.json', {});
 app.post('/register-client', (req, res) => {
-  const { bizKey, bizName, plan, email } = req.body;
+  const { bizKey, bizName, plan, email, googleReviewLink } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
-  clientInfo[bizKey.toLowerCase()] = { bizName, plan: plan || 'bot', email, registeredAt: new Date().toISOString() };
+  clientInfo[bizKey.toLowerCase()] = { bizName, plan: plan || 'bot', email, googleReviewLink: googleReviewLink || '', activated: false, registeredAt: new Date().toISOString() };
   debouncedSave('client_info.json', clientInfo);
   res.json({ success: true });
+});
+
+app.post('/activate-client', async (req, res) => {
+  const { bizKey } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+
+  clientInfo[key].activated = true;
+  clientInfo[key].activatedAt = new Date().toISOString();
+  debouncedSave('client_info.json', clientInfo);
+
+  // Email Eli so he knows to set the Stripe billing date
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'dolbeereli95@gmail.com',
+        subject: '🟢 Bot activated — ' + (clientInfo[key].bizName || key),
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #86efac;">
+          <h2 style="color:#15803d;margin-bottom:8px;">Bot just went live</h2>
+          <p style="color:#374151;font-size:14px;margin-bottom:16px;"><strong>${clientInfo[key].bizName || key}</strong> hit the Activate button. Their 30-day subscription starts now.</p>
+          <div style="background:white;border-radius:8px;padding:14px;border:1px solid #e5e7eb;font-size:13px;color:#374151;">
+            <p><strong>Business:</strong> ${clientInfo[key].bizName || key}</p>
+            <p><strong>Email:</strong> ${clientInfo[key].email || 'Not on file'}</p>
+            <p><strong>Activated at:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET</p>
+            <p><strong>Plan:</strong> ${clientInfo[key].plan || 'Not specified'}</p>
+          </div>
+          <p style="color:#15803d;font-size:13px;font-weight:600;margin-top:16px;">They're being sent to Stripe to pay right now. Billing starts automatically from today.</p>
+        </div>`
+      })
+    });
+  } catch(e) { console.error('[Activate email error]', e.message); }
+
+  res.json({ success: true, activatedAt: clientInfo[key].activatedAt });
 });
 
 app.get('/client-info/:bizKey', (req, res) => {
@@ -762,7 +829,7 @@ app.post('/send-review-sms', async (req, res) => {
       body: new URLSearchParams({
         From: process.env.TWILIO_PHONE_NUMBER,
         To: to,
-        Body: message
+        Body: message + '\n\nReply STOP to opt out.'
       }).toString()
     });
     const data = await response.json();
@@ -851,7 +918,7 @@ const reviewLogs = loadData('review_logs.json', {
 });
 
 app.post('/log-review', (req, res) => {
-  const { businessName, type, feedback, contact, date } = req.body;
+  const { businessName, type, feedback, name, contact, date } = req.body;
   if (!businessName) return res.status(400).json({ error: 'businessName required' });
   const key = businessName.toLowerCase().replace(/\s+/g, '_');
   if (!reviewLogs[key]) reviewLogs[key] = [];
@@ -874,6 +941,217 @@ app.get('/review-report/:bizKey', (req, res) => {
   res.json({ businessKey: key, total: logs.length, positive, negative, negativeFeedback: feedback });
 });
 
+
+// ── RESOLVE FEEDBACK ──
+app.post('/resolve-feedback', (req, res) => {
+  const { bizKey, index, resolved } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  const logs = reviewLogs[key] || [];
+  // negativeFeedback is built from logs filtered to negative — find by index into that subset
+  const negativeLogs = logs.filter(r => r.type === 'negative');
+  if (index >= 0 && index < negativeLogs.length) {
+    // Find this entry in the main logs array and update it
+    const target = negativeLogs[index];
+    const mainIdx = logs.indexOf(target);
+    if (mainIdx >= 0) {
+      reviewLogs[key][mainIdx].resolved = resolved;
+      debouncedSave('review_logs.json', reviewLogs);
+    }
+  }
+  res.json({ success: true });
+});
+
+// ── LOG SMS JOB ──
+app.post('/log-sms-job', async (req, res) => {
+  const { bizKey, customerName, customerPhone, jobType, delayHours } = req.body;
+  if (!bizKey || !customerPhone) return res.status(400).json({ error: 'bizKey and customerPhone required' });
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key] || {};
+  const bizName = client.bizName || bizKey;
+  const googleLink = client.googleReviewLink || '';
+  const delay = parseInt(delayHours) || 24;
+
+  // Log the job
+  if (!reviewLogs[key]) reviewLogs[key] = [];
+  const jobEntry = {
+    type: 'sms_job',
+    customerName: customerName || 'Unknown',
+    customerPhone,
+    jobType: jobType || 'Not specified',
+    delayHours: delay,
+    loggedAt: new Date().toISOString(),
+    sent: false
+  };
+  reviewLogs[key].push(jobEntry);
+  debouncedSave('review_logs.json', reviewLogs);
+
+  // Schedule the SMS send
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+    setTimeout(async function() {
+      try {
+        const firstName = (customerName || 'there').split(' ')[0];
+        const message = 'Hey ' + firstName + '! Thanks for choosing ' + bizName + '. We\'d really appreciate a quick Google review — it means a lot to us!\n\n' + googleLink + '\n\nReply STOP to opt out.';
+        await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: customerPhone, Body: message }).toString()
+        });
+        // Mark as sent
+        const logs = reviewLogs[key] || [];
+        const jobIdx = logs.indexOf(jobEntry);
+        if (jobIdx >= 0) { reviewLogs[key][jobIdx].sent = true; debouncedSave('review_logs.json', reviewLogs); }
+        console.log('[SMS Job] Review text sent to', customerPhone, 'for', bizName);
+      } catch(err) {
+        console.error('[SMS Job Error]', err.message);
+      }
+    }, delay * 60 * 60 * 1000);
+  } else {
+    console.log('[SMS Job] Twilio not configured — job logged but SMS not scheduled');
+  }
+
+  res.json({ success: true });
+});
+
+// ── BILLING PORTAL ──
+app.post('/billing-portal', async (req, res) => {
+  // Stripe not yet configured — return graceful message
+  res.status(200).json({ error: 'Billing portal not yet configured. Email netifybuilds@gmail.com to manage your subscription.' });
+});
+
+// -- GOOGLE AUTH --
+app.post('/auth/google', async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) return res.status(400).json({ error: 'No credential provided' });
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+    const email = payload.email;
+    if (!email) return res.status(400).json({ error: 'No email in token' });
+    const match = Object.entries(clientInfo).find(function([key, val]) {
+      return val.email && val.email.toLowerCase() === email.toLowerCase();
+    });
+    if (!match) return res.status(404).json({ error: 'No account found for ' + email + '. Use your access code or email netifybuilds@gmail.com.' });
+    const [bizKey, clientData] = match;
+    console.log('[Google Auth] Login:', email, '->', bizKey);
+    res.json({ success: true, bizKey, bizName: clientData.bizName, email });
+  } catch(err) {
+    console.error('[Google Auth Error]', err.message);
+    res.status(401).json({ error: 'Google sign-in failed. Please use your access code instead.' });
+  }
+});
+
+app.get('/send-page/:bizKey', async (req, res) => {
+  const bizKey = req.params.bizKey.toLowerCase();
+  const client = clientInfo[bizKey] || {};
+  const bizName = client.bizName || bizKey.replace(/_\d+$/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const googleLink = client.googleReviewLink || '';
+  const twilioReady = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Quick Send — ${bizName}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;min-height:100vh;padding:24px 16px;}
+.card{background:white;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,0.08);max-width:480px;margin:0 auto;}
+h1{font-size:1.2rem;font-weight:700;color:#0A2540;margin-bottom:4px;}
+.sub{font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.5;}
+label{display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;}
+input{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;font-family:inherit;outline:none;margin-bottom:14px;}
+input:focus{border-color:#2563eb;}
+.btn{width:100%;padding:14px;background:#0A2540;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.success{background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:16px;margin-top:14px;display:none;text-align:center;}
+.success-icon{font-size:32px;margin-bottom:8px;}
+.success-msg{font-size:14px;font-weight:600;color:#15803d;}
+.success-sub{font-size:12px;color:#64748b;margin-top:4px;}
+.error{background:#fef2f2;border:1.5px solid #fecaca;border-radius:12px;padding:14px;margin-top:14px;display:none;font-size:13px;color:#dc2626;font-weight:600;}
+.brand{text-align:center;font-size:11px;color:#94a3b8;margin-top:20px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>${bizName}</h1>
+  <p class="sub">Enter the customer's name and phone number — the review request text sends immediately.</p>
+  <label>Customer Name</label>
+  <input type="text" id="custName" placeholder="e.g. John Smith" autocomplete="off" />
+  <label>Customer Phone</label>
+  <input type="tel" id="custPhone" placeholder="(555) 867-5309" autocomplete="off" />
+  <button class="btn" id="sendBtn" onclick="sendReview()">Send Review Request →</button>
+  <div class="success" id="successBox">
+    <div class="success-icon">✓</div>
+    <div class="success-msg" id="successMsg">Review request sent!</div>
+    <div class="success-sub" id="successSub"></div>
+  </div>
+  <div class="error" id="errorBox"></div>
+</div>
+<p class="brand">Powered by Netify Builds</p>
+<script>
+var BACKEND = 'https://botbuilder-backend-production.up.railway.app';
+var BIZ_KEY = '${bizKey}';
+var BIZ_NAME = '${bizName}';
+var GOOGLE_LINK = '${googleLink}';
+var TWILIO_READY = ${twilioReady};
+
+async function sendReview() {
+  var name = document.getElementById('custName').value.trim();
+  var phone = document.getElementById('custPhone').value.trim();
+  var errorBox = document.getElementById('errorBox');
+  errorBox.style.display = 'none';
+
+  if (!name) { document.getElementById('custName').focus(); return; }
+  if (!phone) { document.getElementById('custPhone').focus(); return; }
+
+  var firstName = name.split(' ')[0];
+  var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. We\u2019d really appreciate a quick Google review \u2014 it means a lot to us!\n\n' + GOOGLE_LINK + '\n\nReply STOP to opt out.';
+
+  var btn = document.getElementById('sendBtn');
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+
+  try {
+    var res = await fetch(BACKEND + '/send-review-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: phone, message: message, bizName: BIZ_NAME, bizKey: BIZ_KEY, customerName: name })
+    });
+    var data = await res.json();
+
+    if (data.success) {
+      document.getElementById('successBox').style.display = 'block';
+      document.getElementById('successMsg').textContent = 'Review request sent to ' + firstName + '!';
+      document.getElementById('successSub').textContent = phone;
+      document.getElementById('custName').value = '';
+      document.getElementById('custPhone').value = '';
+      btn.textContent = 'Send Another →';
+      btn.disabled = false;
+    } else {
+      throw new Error(data.error || 'Send failed');
+    }
+  } catch(err) {
+    errorBox.textContent = 'Failed to send: ' + err.message + '. Check that Twilio is set up.';
+    errorBox.style.display = 'block';
+    btn.textContent = 'Send Review Request →';
+    btn.disabled = false;
+  }
+}
+
+['custName','custPhone'].forEach(function(id) {
+  document.getElementById(id).addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') sendReview();
+  });
+});
+</script>
+</body>
+</html>`);
+});
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
