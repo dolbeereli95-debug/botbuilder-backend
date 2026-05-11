@@ -477,6 +477,83 @@ app.post('/signup', async (req, res) => {
 });
 
 
+app.post('/extract-website', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url is required' });
+
+  try {
+    // Fetch the website
+    const siteRes = await fetch(url.startsWith('http') ? url : 'https://' + url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BotBuilder/1.0)' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!siteRes.ok) return res.status(400).json({ error: 'Could not fetch website.' });
+
+    const html = await siteRes.text();
+
+    // Strip down to readable text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+      .trim()
+      .substring(0, 12000);
+
+    if (text.length < 100) return res.status(400).json({ error: 'Not enough content on page.' });
+
+    const extractPrompt = `You are a strict data extractor. Your only job is to extract information that is EXPLICITLY and CLEARLY stated in the website text below.
+
+RULES — you must follow these exactly:
+- Only extract text that is clearly written on the page. Word-for-word or very close to it.
+- If a field is not clearly stated, return null for that field. Do not guess, infer, or fill in anything.
+- Do not summarize creatively. Do not make up plausible-sounding details.
+- Do not combine vague hints into a conclusion. If it is not explicit, it is null.
+- Return ONLY a valid JSON object. No preamble, no explanation, no markdown.
+
+Extract these fields:
+- services: A plain list of specific services mentioned by name. If only vague descriptions like "we help you" appear with no specific service names listed, return null.
+- hours: Business hours exactly as written. If not stated, return null.
+- area: The geographic service area or locations served, exactly as written. Do not use the business address as the service area. If not stated, return null.
+- faqs: Up to 5 question-answer pairs that are explicitly on the page (e.g. an FAQ section). If no FAQ section exists, return null.
+- differentiators: Only include if the site explicitly states what makes them different (e.g. "family owned since 1998", "licensed and insured", "same-day service guaranteed"). If nothing specific is stated, return null.
+- emergency: Emergency or after-hours phone number, only if explicitly listed as such. If not stated, return null.
+- licensing: Any licensing, insurance, or certification info explicitly stated. If not stated, return null.
+- googleReviewLink: A Google review link if one appears on the page. If not present, return null.
+
+WEBSITE TEXT:
+${text}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      system: 'You are a strict data extractor. Return only valid JSON. No markdown, no backticks, no explanation.',
+      messages: [{ role: 'user', content: extractPrompt }],
+    });
+
+    const raw = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
+
+    // Safe parse — strip any accidental markdown fences
+    const clean = raw.replace(/^```json|^```|```$/gm, '').trim();
+    let extracted;
+    try {
+      extracted = JSON.parse(clean);
+    } catch(e) {
+      console.error('[Extract] JSON parse failed:', clean.substring(0, 200));
+      return res.status(500).json({ error: 'Failed to parse extracted data.' });
+    }
+
+    console.log('[Extract] Success for', url, '— fields found:', Object.entries(extracted).filter(([k,v]) => v !== null).map(([k]) => k).join(', '));
+    res.json({ success: true, data: extracted });
+
+  } catch (err) {
+    console.error('[Extract Error]', err.message);
+    if (err.name === 'TimeoutError') return res.status(400).json({ error: 'Website took too long to load.' });
+    res.status(500).json({ error: 'Extract failed: ' + err.message });
+  }
+});
+
 app.post('/scan', async (req, res) => {
   const { url, botType, leadEmail, tone } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
