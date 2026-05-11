@@ -725,11 +725,8 @@ app.post('/activate-client', async (req, res) => {
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
 
-  clientInfo[key].activated = true;
-  clientInfo[key].activatedAt = new Date().toISOString();
-  debouncedSave('client_info.json', clientInfo);
-
-  // Email Eli so he knows to set the Stripe billing date
+  // Don't mark as activated yet -- wait for Stripe payment confirmation
+  // Just notify Eli that the client is heading to Stripe
   try {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -737,23 +734,55 @@ app.post('/activate-client', async (req, res) => {
       body: JSON.stringify({
         from: 'onboarding@resend.dev',
         to: 'dolbeereli95@gmail.com',
-        subject: '🟢 Bot activated — ' + (clientInfo[key].bizName || key),
-        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #86efac;">
-          <h2 style="color:#15803d;margin-bottom:8px;">Bot just went live</h2>
-          <p style="color:#374151;font-size:14px;margin-bottom:16px;"><strong>${clientInfo[key].bizName || key}</strong> hit the Activate button. Their 30-day subscription starts now.</p>
+        subject: '💳 Client heading to Stripe -- ' + (clientInfo[key].bizName || key),
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;">
+          <h2 style="color:#1d4ed8;margin-bottom:8px;">Client hitting Activate</h2>
+          <p style="color:#374151;font-size:14px;margin-bottom:16px;"><strong>${clientInfo[key].bizName || key}</strong> clicked Activate and is being sent to Stripe to pay.</p>
           <div style="background:white;border-radius:8px;padding:14px;border:1px solid #e5e7eb;font-size:13px;color:#374151;">
             <p><strong>Business:</strong> ${clientInfo[key].bizName || key}</p>
             <p><strong>Email:</strong> ${clientInfo[key].email || 'Not on file'}</p>
-            <p><strong>Activated at:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET</p>
             <p><strong>Plan:</strong> ${clientInfo[key].plan || 'Not specified'}</p>
           </div>
-          <p style="color:#15803d;font-size:13px;font-weight:600;margin-top:16px;">They're being sent to Stripe to pay right now. Billing starts automatically from today.</p>
+          <p style="color:#1d4ed8;font-size:13px;font-weight:600;margin-top:16px;">Bot will be marked active once Stripe confirms payment.</p>
         </div>`
       })
     });
   } catch(e) { console.error('[Activate email error]', e.message); }
 
-  res.json({ success: true, activatedAt: clientInfo[key].activatedAt });
+  res.json({ success: true, pendingPayment: true });
+});
+
+// -- CONFIRM ACTIVATION (called by Stripe webhook after payment) --
+app.post('/confirm-activation', async (req, res) => {
+  const { bizKey, stripeCustomerId } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+
+  clientInfo[key].activated = true;
+  clientInfo[key].activatedAt = new Date().toISOString();
+  if (stripeCustomerId) clientInfo[key].stripeCustomerId = stripeCustomerId;
+  debouncedSave('client_info.json', clientInfo);
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'dolbeereli95@gmail.com',
+        subject: '🟢 Payment confirmed -- ' + (clientInfo[key].bizName || key),
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #86efac;">
+          <h2 style="color:#15803d;margin-bottom:8px;">Bot is now live</h2>
+          <p style="color:#374151;font-size:14px;"><strong>${clientInfo[key].bizName || key}</strong> paid via Stripe. Bot is now activated.</p>
+          <p style="color:#374151;font-size:13px;margin-top:8px;"><strong>Activated:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET</p>
+        </div>`
+      })
+    });
+  } catch(e) {}
+
+  res.json({ success: true });
 });
 
 app.get('/client-info/:bizKey', (req, res) => {
