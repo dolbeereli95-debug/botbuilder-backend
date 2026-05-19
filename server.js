@@ -2,6 +2,7 @@ const express = require('express');
 const { OAuth2Client } = require('google-auth-library');
 const GOOGLE_CLIENT_ID = '968822994959-js3lra786sg48d1t29l5ju5kbio6h6m1.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nb-admin-2026';
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
@@ -39,17 +40,16 @@ function debouncedSave(filename, data) {
 
 app.use(cors({
   origin: function(origin, callback) {
-    const allowed = [
-      'https://netifybuilds.pages.dev',
-      'http://localhost',
-      'http://127.0.0.1',
-      null // allow requests with no origin (mobile apps, curl, local files)
-    ];
-    if (!origin || allowed.some(function(a) { return !origin || origin === a || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.includes('netifybuilds'); })) {
-      callback(null, true);
-    } else {
-      callback(null, true); // keep open for now — lock down after first client
+    if (!origin) return callback(null, true);
+    if (
+      origin.includes('netifybuilds.com') ||
+      origin.includes('netifybuilds.pages.dev') ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1')
+    ) {
+      return callback(null, true);
     }
+    return callback(new Error('Not allowed by CORS'));
   }
 }));
 app.use(express.json({ limit: '50kb' }));
@@ -81,12 +81,30 @@ app.get('/', (req, res) => {
 });
 
 app.post('/chat', rateLimit, async (req, res) => {
-  const { messages, systemPrompt } = req.body;
+  const { messages, systemPrompt, bizKey } = req.body;
+
+  // Domain validation -- check the widget is being used from a registered domain
+  const origin = req.headers.origin || req.headers.referer || '';
+  if (bizKey && clientInfo[bizKey.toLowerCase()]) {
+    const client = clientInfo[bizKey.toLowerCase()];
+    if (client.domain && origin && !origin.includes(client.domain) && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('netifybuilds')) {
+      console.warn('[Domain Mismatch]', bizKey, 'called from', origin, 'expected', client.domain);
+      return res.status(403).json({ reply: 'Unauthorized domain.' });
+    }
+  }
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
   }
   if (!systemPrompt || typeof systemPrompt !== 'string') {
     return res.status(400).json({ error: 'systemPrompt is required' });
+  }
+
+  // Detect handoff request keywords
+  const lastUserMsg = (messages[messages.length - 1] || {}).content || '';
+  const handoffKeywords = ['speak to someone', 'talk to someone', 'real person', 'human', 'speak to a person', 'call me', 'representative', 'agent', 'talk to eli', 'speak to eli'];
+  const wantsHandoff = handoffKeywords.some(kw => lastUserMsg.toLowerCase().includes(kw));
+  if (wantsHandoff && bizKey) {
+    return res.json({ reply: 'Of course! Let me get someone for you right away.', handoffRequested: true });
   }
   const cleanMessages = messages
     .filter(m => m && typeof m.content === 'string' && ['user', 'assistant'].includes(m.role))
@@ -209,8 +227,8 @@ The system prompt you write must:
 - Follow the specified tone exactly
 - Know what to never say
 - Include a strict instruction that the bot must NEVER use markdown formatting, bullet points, bold text, headers, or emojis in any response. Plain conversational sentences only — no asterisks, no dashes as bullets, no pound signs, nothing. Just natural human-sounding text.
-- Include after-hours behavior: the bot should know the business hours and when someone contacts outside those hours, acknowledge it warmly and let them know the team will follow up first thing when they open — while still capturing the lead
-- Include clear lead capture instructions: naturally collect name, phone number, job type, and urgency through conversation. Once name AND phone are collected, output this exact trigger at the very end of the response: LEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified]. The trigger must always use this exact format with pipe separators and no extra spaces. Never show the trigger to the customer. Never ask for contact info again if already collected in the conversation.
+- Include after-hours behavior: the bot should know the business hours and when someone contacts outside those hours, acknowledge it warmly and let them know someone from the team will follow up first thing during business hours. Never promise a specific callback time like '20 minutes' after hours. Still capture the lead naturally during the conversation.
+- Include clear lead capture instructions: naturally collect name, phone number, job type, and urgency through conversation. Once name AND phone are collected, tell the customer someone from the team will reach out — never use the owner's specific name in this context. Then output this exact trigger at the very end of the response: LEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified]. The trigger must always use this exact format with pipe separators and no extra spaces. Never show the trigger to the customer. Never ask for contact info again if already collected in the conversation.
 - Include competitor handling: stay neutral, never speak negatively about competitors, redirect to the business's strengths.
 - Include off-topic handling: redirect naturally and briefly, vary phrasing each time, keep it one sentence.
 - Include personality variation: vary responses naturally, sound like a real person.
@@ -382,6 +400,40 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
       </div>`
     );
   }, 7 * 24 * 60 * 60 * 1000); // 7 days
+
+  // Email 4 -- Day 14: Results nudge
+  setTimeout(async function() {
+    await sendEmail(
+      email,
+      'Two weeks in -- how are things looking, ' + firstName + '?',
+      `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
+        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">Two weeks in</h2>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Hey ${firstName} -- wanted to check in and see how things are going with ${bizName}.</p>
+        ${isBot ? `<p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Your chat assistant has been running for two weeks now. You can see all your conversations and leads captured in your client portal. If the bot ever says something that needs updating, just hit the "Send Update Request" button in the portal and I'll fix it same day.</p>` : ''}
+        ${isReview ? `<p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">The more consistently you send the review link after jobs, the faster your Google rating climbs. Even 3-4 a week makes a real difference within 30 days.</p>` : ''}
+        ${isCampaign ? `<p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you haven't sent your customer list yet, now is a great time -- reply to this email and we'll get your first campaign scheduled.</p>` : ''}
+        <p style="color:#555;font-size:14px;line-height:1.7;">Any questions at all, just reply here.<br><br>-- Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds</span></p>
+      </div>`
+    );
+  }, 14 * 24 * 60 * 60 * 1000); // 14 days
+
+  // Email 5 -- Day 30: Results review
+  setTimeout(async function() {
+    await sendEmail(
+      email,
+      'One month with Netify Builds -- ' + bizName,
+      `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
+        <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">One month in</h2>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Hey ${firstName} -- it's been a full month. I hope things are going well at ${bizName}.</p>
+        <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Log into your portal anytime to see your stats -- conversations, leads captured, review counts, and any private feedback. Everything is tracked and updated in real time.</p>
+        ${!isReview ? `<div style="background:#fefce8;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid #fde68a;">
+          <p style="font-size:13px;font-weight:700;color:#b45309;margin-bottom:6px;">Worth knowing about</p>
+          <p style="font-size:13px;color:#555;line-height:1.6;">A lot of my clients add the Review Filter after their first month once they see how the chat assistant is working. It catches unhappy customers before they post publicly and sends happy ones straight to Google. Happy to tell you more if you're curious.</p>
+        </div>` : ''}
+        <p style="color:#555;font-size:14px;line-height:1.7;">As always -- any issues or updates needed, just reply here. I'm around.<br><br>-- Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds</span></p>
+      </div>`
+    );
+  }, 30 * 24 * 60 * 60 * 1000); // 30 days
 }
 
 app.post('/signup', async (req, res) => {
@@ -483,15 +535,23 @@ app.post('/signup', async (req, res) => {
 
     // Auto-register client in portal system
     const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+    // Extract domain from website URL
+    let clientDomain = '';
+    if (website) {
+      try { clientDomain = new URL(website.startsWith('http') ? website : 'https://' + website).hostname; } catch(e) {}
+    }
     clientInfo[bizKey] = {
       bizName: bizName,
       plan: pkg || 'faq',
       email: email,
+      phone: phone || '',
+      industry: industry || '',
       activated: false,
       registeredAt: new Date().toISOString(),
       googleReviewLink: googleReviewLink || '',
       campaignListSize: campaignListSize || '',
-      campaignListFormat: campaignListFormat || ''
+      campaignListFormat: campaignListFormat || '',
+      domain: clientDomain
     };
     debouncedSave('client_info.json', clientInfo);
 
@@ -664,8 +724,26 @@ ${text}`;
 
 
 app.post('/review-lead', async (req, res) => {
-  const { name, contact, feedback, transcript, urgent, businessEmail, businessName } = req.body;
+  const { name, contact, feedback, transcript, urgent, businessEmail, businessName, ownerPhone } = req.body;
   if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
+
+  // Feature 3: Urgent SMS alert to business owner
+  if (urgent && ownerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+    try {
+      const urgentSMS = 'URGENT: ' + (businessName || 'Your business') + ' received negative feedback that needs immediate attention. Log into your Netify Builds portal to review it now. Reply STOP to opt out.';
+      await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: ownerPhone, Body: urgentSMS }).toString()
+      });
+      console.log('[Urgent SMS] Sent to', ownerPhone, 'for', businessName);
+    } catch(smsErr) {
+      console.error('[Urgent SMS Error]', smsErr.message);
+    }
+  }
 
   const subjectPrefix = urgent ? '🚨 URGENT — ' : '⚠️ ';
   const transcriptHtml = transcript
@@ -675,6 +753,23 @@ app.post('/review-lead', async (req, res) => {
       }).join('')
     : '<p style="color:#94a3b8;font-size:13px;">No transcript available</p>';
 
+  // Feature 4: Generate suggested response
+  let suggestedResponse = '';
+  if (feedback) {
+    try {
+      const suggestionRes = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: 'You write short, professional, empathetic responses for small business owners to send to unhappy customers. 2-3 sentences max. Acknowledge the issue, apologize sincerely, offer to make it right. Plain text only, no formatting.',
+        messages: [{ role: 'user', content: 'Customer feedback: ' + feedback + '\nBusiness name: ' + (businessName || 'our business') }]
+      });
+      suggestedResponse = suggestionRes.content[0].text.trim();
+    } catch(e) { console.error('[Suggestion Error]', e.message); }
+  }
+  const suggestionBlock = suggestedResponse
+    ? '<div style="background:#f0f9ff;border-radius:10px;padding:16px;margin:12px 0;border-left:4px solid #0891b2;"><p style="font-size:13px;font-weight:700;color:#0369a1;margin:0 0 8px;">Suggested response to send this customer:</p><p style="font-size:14px;color:#1e3a5f;margin:0;line-height:1.6;font-style:italic;">"' + suggestedResponse + '"</p></div>'
+    : '';
+
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -682,7 +777,7 @@ app.post('/review-lead', async (req, res) => {
       body: JSON.stringify({
         from: 'onboarding@resend.dev',
         to: businessEmail,
-        subject: subjectPrefix + 'Private Feedback — ' + (businessName || 'your business'),
+        subject: subjectPrefix + 'Private Feedback -- ' + (businessName || 'your business'),
         html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">
           ${urgent ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;font-weight:600;color:#dc2626;">⚠️ This feedback contains urgent language — respond as soon as possible.</div>' : ''}
           <h2 style="color:#c2410c;margin-bottom:4px;">Private Feedback Received</h2>
@@ -692,6 +787,7 @@ app.post('/review-lead', async (req, res) => {
             <p style="margin:0 0 8px;font-size:14px;"><strong>Contact:</strong> ${contact || 'Not provided'}</p>
             <p style="margin:0;font-size:14px;"><strong>Issue:</strong> ${feedback || 'Not provided'}</p>
           </div>
+          ${suggestionBlock}
           <div style="margin-bottom:20px;">
             <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin-bottom:10px;">Full Conversation</p>
             <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb;">${transcriptHtml}</div>
@@ -712,9 +808,10 @@ app.post('/review-lead', async (req, res) => {
 // ── CLIENT INFO STORE (persistent) ──
 const clientInfo = loadData('client_info.json', {});
 app.post('/register-client', (req, res) => {
-  const { bizKey, bizName, plan, email, googleReviewLink } = req.body;
+  const { bizKey, bizName, plan, email, googleReviewLink, domain, secret } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
-  clientInfo[bizKey.toLowerCase()] = { bizName, plan: plan || 'bot', email, googleReviewLink: googleReviewLink || '', activated: false, registeredAt: new Date().toISOString() };
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+  clientInfo[bizKey.toLowerCase()] = { bizName, plan: plan || 'bot', email, googleReviewLink: googleReviewLink || '', domain: domain || '', activated: false, registeredAt: new Date().toISOString() };
   debouncedSave('client_info.json', clientInfo);
   res.json({ success: true });
 });
@@ -724,6 +821,8 @@ app.post('/activate-client', async (req, res) => {
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  // Prevent activation if already activated
+  if (clientInfo[key].activated) return res.json({ success: true, alreadyActivated: true });
 
   // Don't mark as activated yet -- wait for Stripe payment confirmation
   // Just notify Eli that the client is heading to Stripe
@@ -753,10 +852,314 @@ app.post('/activate-client', async (req, res) => {
   res.json({ success: true, pendingPayment: true });
 });
 
+// ── TRIGGER-BASED REACTIVATION CAMPAIGNS ──
+
+// Check and fire triggered campaigns
+async function checkTriggerCampaigns() {
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-12
+  const day = now.getDate();
+
+  // Seasonal triggers by industry
+  const seasonalTriggers = {
+    'HVAC': [
+      { months: [4, 5], message: 'Summer is coming fast. Have you had your AC checked yet? A quick tune-up now can save you from a breakdown on the hottest day of the year. Reply STOP to opt out.' },
+      { months: [9, 10], message: 'Cold weather is right around the corner. Get your furnace checked before the first freeze so you\'re not scrambling when it matters most. Reply STOP to opt out.' },
+    ],
+    'Plumbing': [
+      { months: [11, 12], message: 'Frozen pipes are one of the most expensive plumbing emergencies. A quick winterization check now can save you thousands. Reply STOP to opt out.' },
+      { months: [3, 4], message: 'Spring is a great time to check for any pipe damage from winter. Catch small leaks before they become big problems. Reply STOP to opt out.' },
+    ],
+    'Roofing': [
+      { months: [3, 4], message: 'Winter can be tough on roofs. Spring is the perfect time for an inspection to catch any damage before summer storms. Reply STOP to opt out.' },
+      { months: [9], message: 'Before winter sets in, it\'s worth having your roof inspected. Small issues now can turn into big leaks when the snow hits. Reply STOP to opt out.' },
+    ],
+    'Landscaping': [
+      { months: [3, 4], message: 'Spring is here -- perfect time to get your yard looking great again. Reply STOP to opt out.' },
+      { months: [10], message: 'Fall cleanup time. Let us get your yard ready for winter before the first frost. Reply STOP to opt out.' },
+    ],
+    'Cleaning Service': [
+      { months: [3, 4], message: 'Spring cleaning season is here. Book now before our schedule fills up. Reply STOP to opt out.' },
+      { months: [11], message: 'The holidays are coming. Let us get your home guest-ready before the rush. Reply STOP to opt out.' },
+    ],
+    'Pest Control': [
+      { months: [4, 5], message: 'Pest season is starting. Get ahead of it with a preventative treatment now before infestations start. Reply STOP to opt out.' },
+      { months: [9], message: 'As temperatures drop pests look for warm places to hide -- like your home. A fall treatment keeps them out. Reply STOP to opt out.' },
+    ],
+  };
+
+  // Only run on the 1st of each month to avoid spamming
+  if (day !== 1) return;
+
+  for (const bizKey of Object.keys(clientInfo)) {
+    try {
+    const client = clientInfo[bizKey];
+    if (!client.activated) continue;
+    const plan = client.plan || '';
+    if (['campaign','bot_campaign','review_campaign','all'].indexOf(plan) === -1) continue;
+    if (!client.phone) continue;
+
+    const industry = client.industry || '';
+    const triggers = seasonalTriggers[industry] || [];
+    const trigger = triggers.find(t => t.months.includes(month));
+
+    if (!trigger) continue;
+
+    // Check we haven't already sent this month
+    const lastKey = 'triggered_' + bizKey + '_' + now.getFullYear() + '_' + month;
+    if (client[lastKey]) continue;
+
+    // Check if Twilio is configured
+    if (!process.env.TWILIO_ACCOUNT_SID) continue;
+
+    // Get their customer list from sms jobs
+    const logs = reviewLogs[bizKey] || [];
+    const customers = [...new Set(logs.filter(r => r.customerPhone).map(r => ({ phone: r.customerPhone, name: r.customerName || '' })))];
+
+    if (customers.length === 0) continue;
+
+    console.log('[Trigger Campaign] Firing for', bizKey, 'industry:', industry, 'month:', month, 'customers:', customers.length);
+
+    // Send to each customer with a small delay — each wrapped in its own try/catch
+    let sent = 0;
+    for (const customer of customers.slice(0, 100)) {
+      try {
+        const firstName = customer.name ? customer.name.split(' ')[0] : '';
+        const message = firstName ? 'Hey ' + firstName + '! ' + trigger.message : trigger.message;
+        await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+          method: 'POST',
+          headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: customer.phone, Body: message }).toString()
+        });
+        sent++;
+      } catch(smsErr) {
+        console.error('[Trigger SMS Error] Failed for', customer.phone, ':', smsErr.message);
+        // Continue to next customer regardless of failure
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    // Mark as sent for this month
+    clientInfo[bizKey][lastKey] = new Date().toISOString();
+    debouncedSave('client_info.json', clientInfo);
+
+    // Email Eli summary
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@resend.dev',
+          to: 'dolbeereli95@gmail.com',
+          subject: 'Trigger campaign fired -- ' + (client.bizName || bizKey),
+          html: '<div style="font-family:sans-serif;padding:24px;"><h3>Trigger campaign sent</h3><p><strong>Client:</strong> ' + (client.bizName || bizKey) + '</p><p><strong>Industry:</strong> ' + industry + '</p><p><strong>Sent to:</strong> ' + sent + ' customers</p><p><strong>Message:</strong> ' + trigger.message + '</p></div>'
+        })
+      });
+    } catch(e) {}
+    } catch(clientErr) { console.error('[Trigger Client Error]', bizKey, clientErr.message); }
+  }
+}
+
+// Run trigger check on server start and every 24 hours
+checkTriggerCampaigns();
+setInterval(checkTriggerCampaigns, 24 * 60 * 60 * 1000);
+
+// Manual trigger endpoint for testing
+app.post('/trigger-campaigns', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+  await checkTriggerCampaigns();
+  res.json({ success: true });
+});
+
+// ── INBOUND SMS WEBHOOK (Twilio) ──
+// Twilio calls this when a customer replies to a review request text
+app.post('/sms-inbound', async (req, res) => {
+  const { Body, From, To } = req.body;
+  if (!Body || !From) return res.status(200).send('<Response></Response>');
+
+  const reply = Body.trim().toLowerCase();
+  const phone = From;
+
+  // Find which client this phone number belongs to by checking sms_sessions
+  const session = smsSessionStore[phone];
+
+  // Handle STOP/HELP
+  if (reply === 'stop' || reply === 'help') {
+    return res.status(200).send('<Response></Response>');
+  }
+
+  // Check if this is an owner replying to a handoff session
+  const handoff = handoffStore[phone];
+  if (handoff && handoff.active) {
+    if (reply === 'done') {
+      // Owner ended the handoff
+      const sid = handoff.sessionId;
+      if (handoffStore[sid]) handoffStore[sid].active = false;
+      delete handoffStore[phone];
+      res.setHeader('Content-Type', 'text/xml');
+      return res.status(200).send('<Response><Message>Handoff ended. The customer has been notified.</Message></Response>');
+    }
+    // Store owner reply for widget to pick up
+    const sid = handoff.sessionId;
+    if (handoffStore[sid]) handoffStore[sid].pendingReply = Body.trim();
+    res.setHeader('Content-Type', 'text/xml');
+    return res.status(200).send('<Response><Message>Delivered to customer.</Message></Response>');
+  }
+
+  let responseText = '';
+
+  if (session && session.stage === 'awaiting_rating') {
+    const rating = parseInt(reply);
+    if (isNaN(rating) || rating < 1 || rating > 5) {
+      responseText = 'Please reply with a number from 1 to 5.';
+    } else if (rating >= 4) {
+      // Happy customer — send Google review link
+      const googleLink = session.googleReviewLink || '';
+      responseText = 'We\'re so glad to hear that! If you have a moment, a Google review would mean the world to us: ' + googleLink;
+      // Log as positive
+      const key = session.bizKey;
+      if (!reviewLogs[key]) reviewLogs[key] = [];
+      reviewLogs[key].push({
+        type: 'positive',
+        feedback: 'SMS review: rated ' + rating + '/5',
+        name: session.customerName || 'SMS Customer',
+        contact: phone,
+        date: new Date().toISOString(),
+        source: 'sms'
+      });
+      debouncedSave('review_logs.json', reviewLogs);
+      smsSessionStore[phone] = { ...session, stage: 'complete', rating };
+    } else {
+      // Unhappy customer — ask for feedback
+      responseText = 'We\'re sorry to hear that. Would you mind telling us what went wrong? Your feedback helps us improve.';
+      smsSessionStore[phone] = { ...session, stage: 'awaiting_feedback', rating };
+    }
+  } else if (session && session.stage === 'awaiting_feedback') {
+    // Log negative feedback
+    const key = session.bizKey;
+    if (!reviewLogs[key]) reviewLogs[key] = [];
+    const urgentWords = ['lawyer','attorney','sue','refund','fraud','terrible','horrible','worst','furious','scam'];
+    const isUrgent = urgentWords.some(w => reply.includes(w));
+    reviewLogs[key].push({
+      type: 'negative',
+      feedback: Body.trim(),
+      name: session.customerName || 'SMS Customer',
+      contact: phone,
+      date: new Date().toISOString(),
+      source: 'sms',
+      resolved: false
+    });
+    debouncedSave('review_logs.json', reviewLogs);
+
+    // Email the business owner
+    const client = clientInfo[key] || {};
+    if (client.email) {
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: 'onboarding@resend.dev',
+            to: client.email,
+            bcc: 'dolbeereli95@gmail.com',
+            subject: (isUrgent ? '🚨 URGENT -- ' : '⚠️ ') + 'Private SMS Feedback -- ' + (client.bizName || key),
+            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">
+              <h2 style="color:#c2410c;margin-bottom:4px;">Private Feedback via SMS</h2>
+              <p style="color:#555;font-size:14px;margin-bottom:16px;">A customer replied to your review request with negative feedback.</p>
+              <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb;margin-bottom:16px;">
+                <p style="font-size:14px;margin:0 0 8px;"><strong>Customer:</strong> ${session.customerName || 'Unknown'}</p>
+                <p style="font-size:14px;margin:0 0 8px;"><strong>Phone:</strong> ${phone}</p>
+                <p style="font-size:14px;margin:0 0 8px;"><strong>Rating:</strong> ${session.rating}/5</p>
+                <p style="font-size:14px;margin:0;"><strong>Feedback:</strong> ${Body.trim()}</p>
+              </div>
+              <p style="color:#c2410c;font-size:13px;font-weight:600;">A quick follow-up call can often prevent a bad Google review.</p>
+              <p style="color:#999;font-size:12px;margin-top:16px;text-align:center;">Sent by Netify Builds</p>
+            </div>`
+          })
+        });
+      } catch(e) { console.error('[SMS Feedback Email Error]', e.message); }
+
+      // Urgent SMS to owner
+      if (isUrgent && client.phone && process.env.TWILIO_ACCOUNT_SID) {
+        try {
+          await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+            method: 'POST',
+            headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: client.phone, Body: 'URGENT: A customer left urgent negative feedback via SMS. Check your Netify Builds portal now. Reply STOP to opt out.' }).toString()
+          });
+        } catch(e) {}
+      }
+    }
+
+    responseText = 'Thank you for letting us know. We take all feedback seriously and will be in touch shortly.';
+    smsSessionStore[phone] = { ...session, stage: 'complete' };
+  } else {
+    // No session found -- generic response
+    responseText = 'Thanks for your message. For help, contact us directly.';
+  }
+
+  // Send reply via TwiML
+  const twiml = responseText
+    ? '<Response><Message>' + responseText + '</Message></Response>'
+    : '<Response></Response>';
+  res.setHeader('Content-Type', 'text/xml');
+  res.status(200).send(twiml);
+});
+
+// ── SMS SESSION STORE (in-memory, resets on redeploy -- acceptable for short sessions) ──
+const smsSessionStore = {};
+
+// ── CHAT HANDOFF STORE ──
+// Links active website chats to owner SMS replies
+const handoffStore = {};
+// handoffStore[ownerPhone] = { bizKey, chatSessionId, customerMessages: [], active: true }
+// handoffStore[chatSessionId] = { ownerPhone, bizKey, pendingReply: null }
+
+// ── SEND REVIEW SMS WITH SESSION TRACKING ──
+// Override /send-review-sms to track sessions for two-way flow
+// (sessions stored in smsSessionStore keyed by customer phone)
+
+// ── APPOINTMENT REQUEST ──
+app.post('/appointment-request', async (req, res) => {
+  const { bizKey, customerName, customerPhone, preferredDay, preferredTime, reason, businessEmail, businessName } = req.body;
+  if (!businessEmail) return res.status(400).json({ error: 'businessEmail required' });
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: businessEmail,
+        bcc: 'dolbeereli95@gmail.com',
+        subject: 'New Appointment Request -- ' + (businessName || 'your business'),
+        html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
+          <h2 style="color:#0369a1;margin-bottom:8px;">New Appointment Request</h2>
+          <p style="color:#374151;font-size:14px;margin-bottom:16px;">Someone requested an appointment through your website chat.</p>
+          <div style="background:white;border-radius:8px;padding:16px;border:1px solid #e5e7eb;font-size:14px;color:#374151;">
+            <p style="margin:0 0 8px;"><strong>Name:</strong> ${customerName || 'Not provided'}</p>
+            <p style="margin:0 0 8px;"><strong>Phone:</strong> ${customerPhone || 'Not provided'}</p>
+            <p style="margin:0 0 8px;"><strong>Preferred day:</strong> ${preferredDay || 'Flexible'}</p>
+            <p style="margin:0 0 8px;"><strong>Preferred time:</strong> ${preferredTime || 'Flexible'}</p>
+            <p style="margin:0;"><strong>Reason:</strong> ${reason || 'Not specified'}</p>
+          </div>
+          <p style="color:#0369a1;font-size:13px;font-weight:600;margin-top:16px;">Give them a call to confirm the appointment.</p>
+        </div>`
+      })
+    });
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[Appointment Request Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // -- CONFIRM ACTIVATION (called by Stripe webhook after payment) --
 app.post('/confirm-activation', async (req, res) => {
-  const { bizKey, stripeCustomerId } = req.body;
+  const { bizKey, stripeCustomerId, secret } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
 
@@ -786,7 +1189,7 @@ app.post('/confirm-activation', async (req, res) => {
 });
 
 app.get('/client-info/:bizKey', (req, res) => {
-  const key = req.params.bizKey.toLowerCase();
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   res.json(clientInfo[key] || { bizKey: key });
 });
 const conversationLogs = loadData('conversation_logs.json', {});
@@ -802,12 +1205,14 @@ app.post('/log-conversation', (req, res) => {
 });
 
 app.get('/conversations/:bizKey', (req, res) => {
-  const key = req.params.bizKey.toLowerCase();
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   res.json({ conversations: (conversationLogs[key] || []).slice(0, 20) });
 });
 // ── KNOWLEDGE BASE UPDATE ──
 app.post('/update-knowledge', async (req, res) => {
+  // Track portal activity for health score
   const { bizKey, bizName, update, ownerEmail } = req.body;
+  if (bizKey && clientInfo[bizKey.toLowerCase()]) { clientInfo[bizKey.toLowerCase()].lastActivity = new Date().toISOString(); debouncedSave('client_info.json', clientInfo); }
   if (!bizKey || !update) return res.status(400).json({ error: 'bizKey and update required' });
 
   // Email Eli with the update request
@@ -840,7 +1245,7 @@ app.post('/update-knowledge', async (req, res) => {
   }
 });
 app.post('/send-review-sms', async (req, res) => {
-  const { to, message, bizName } = req.body;
+  const { to, message, bizName, bizKey, customerName } = req.body;
   if (!to || !message) return res.status(400).json({ error: 'to and message required' });
 
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
@@ -864,6 +1269,23 @@ app.post('/send-review-sms', async (req, res) => {
     const data = await response.json();
     if (data.error_code) throw new Error(data.message);
     console.log('[Review SMS] Sent to', to, 'for', bizName);
+
+    // Store session for two-way flow
+    if (bizKey) {
+      const key = bizKey.toLowerCase();
+      const client = clientInfo[key] || {};
+      smsSessionStore[to] = {
+        bizKey: key,
+        bizName: bizName || client.bizName || '',
+        customerName: customerName || '',
+        googleReviewLink: client.googleReviewLink || '',
+        stage: 'awaiting_rating',
+        sentAt: new Date().toISOString()
+      };
+      // Auto-expire session after 7 days
+      setTimeout(function() { delete smsSessionStore[to]; }, 7 * 24 * 60 * 60 * 1000);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('[Review SMS Error]', err.message);
@@ -924,7 +1346,7 @@ app.post('/log-analytics', (req, res) => {
 });
 
 app.get('/analytics/:bizKey', (req, res) => {
-  const key = req.params.bizKey.toLowerCase();
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   const data = analyticsLogs[key];
   if (!data) return res.json({ bizKey: key, conversations: 0, messages: 0, leads: 0, conversionRate: '0%', commonQuestions: [] });
   const rate = data.conversations > 0 ? Math.round((data.leads / data.conversations) * 100) + '%' : '0%';
@@ -958,7 +1380,7 @@ app.post('/log-review', (req, res) => {
 });
 
 app.get('/review-report/:bizKey', (req, res) => {
-  const key = req.params.bizKey.toLowerCase();
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   const logs = reviewLogs[key] || [];
   const positive = logs.filter(r => r.type === 'positive').length;
   const negative = logs.filter(r => r.type === 'negative').length;
@@ -1019,8 +1441,13 @@ app.post('/log-sms-job', async (req, res) => {
   if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
     setTimeout(async function() {
       try {
-        const firstName = (customerName || 'there').split(' ')[0];
-        const message = 'Hey ' + firstName + '! Thanks for choosing ' + bizName + '. We\'d really appreciate a quick Google review — it means a lot to us!\n\n' + googleLink + '\n\nReply STOP to opt out.';
+        var message;
+        if (customerName && customerName.trim()) {
+          var firstName = customerName.trim().split(' ')[0];
+          message = 'Hey ' + firstName + '! Thanks for choosing ' + bizName + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.';
+        } else {
+          message = 'Hey! Thanks for choosing ' + bizName + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.';
+        }
         await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
           method: 'POST',
           headers: {
@@ -1071,6 +1498,58 @@ app.post('/auth/google', async (req, res) => {
     console.error('[Google Auth Error]', err.message);
     res.status(401).json({ error: 'Google sign-in failed. Please use your access code instead.' });
   }
+});
+
+// ── CHAT HANDOFF ENDPOINTS ──
+
+// Widget calls this to request a live handoff
+app.post('/request-handoff', async (req, res) => {
+  const { bizKey, sessionId, customerMessage, bizName, businessPhone } = req.body;
+  if (!bizKey || !sessionId) return res.status(400).json({ error: 'bizKey and sessionId required' });
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key] || {};
+  const ownerPhone = businessPhone || client.phone || '';
+
+  if (!ownerPhone) return res.json({ success: false, reason: 'no_phone' });
+  if (!process.env.TWILIO_ACCOUNT_SID) return res.json({ success: false, reason: 'no_twilio' });
+
+  // Store handoff session
+  handoffStore[ownerPhone] = { bizKey: key, sessionId, active: true, startedAt: new Date().toISOString() };
+  handoffStore[sessionId] = { ownerPhone, bizKey: key, pendingReply: null };
+
+  // Text the owner
+  const ownerMsg = 'A customer on your website wants to talk to someone.\n\nThey said: "' + (customerMessage || '').substring(0, 100) + '"\n\nReply to this text and your message will be delivered to them instantly. Reply DONE when finished.';
+
+
+  try {
+    await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+      method: 'POST',
+      headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: ownerPhone, Body: ownerMsg }).toString()
+    });
+    console.log('[Handoff] Started for', key, 'session', sessionId);
+    res.json({ success: true });
+
+    // Auto-expire after 30 minutes
+    setTimeout(function() {
+      if (handoffStore[ownerPhone] && handoffStore[ownerPhone].sessionId === sessionId) {
+        delete handoffStore[ownerPhone];
+        delete handoffStore[sessionId];
+      }
+    }, 30 * 60 * 1000);
+  } catch(e) {
+    console.error('[Handoff Error]', e.message);
+    res.json({ success: false, reason: 'sms_failed' });
+  }
+});
+
+// Widget polls this to get owner reply
+app.get('/handoff-reply/:sessionId', (req, res) => {
+  const session = handoffStore[req.params.sessionId];
+  if (!session) return res.json({ active: false, reply: null });
+  const reply = session.pendingReply;
+  if (reply) session.pendingReply = null; // clear after reading
+  res.json({ active: session.active !== false, reply });
 });
 
 app.get('/send-page/:bizKey', async (req, res) => {
@@ -1139,7 +1618,7 @@ async function sendReview() {
   if (!phone) { document.getElementById('custPhone').focus(); return; }
 
   var firstName = name.split(' ')[0];
-  var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. We\u2019d really appreciate a quick Google review \u2014 it means a lot to us!\n\n' + GOOGLE_LINK + '\n\nReply STOP to opt out.';
+  var message = name ? ('Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.') : ('Hey! Thanks for choosing ' + BIZ_NAME + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.');
 
   var btn = document.getElementById('sendBtn');
   btn.textContent = 'Sending...';
@@ -1180,6 +1659,222 @@ async function sendReview() {
 </script>
 </body>
 </html>`);
+});
+
+// ── CLIENT HEALTH SCORE ──
+function calculateHealthScore(bizKey) {
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key];
+  if (!client) return 0;
+
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const plan = client.plan || 'faq';
+  const hasBot = ['bot','faq','bundle','bot_campaign','all'].indexOf(plan) !== -1;
+  const hasReview = ['review','bundle','review_campaign','all'].indexOf(plan) !== -1;
+  const hasCampaign = ['campaign','bot_campaign','review_campaign','all'].indexOf(plan) !== -1;
+
+  let score = 0;
+  let maxScore = 0;
+
+  // Bot activity -- conversations and leads in last 30 days
+  if (hasBot) {
+    maxScore += 40;
+    const analytics = analyticsLogs[key] || {};
+    const convs = analytics.conversations || 0;
+    const leads = analytics.leads || 0;
+    score += Math.min(20, convs * 2); // up to 20 pts for conversations
+    score += Math.min(20, leads * 4); // up to 20 pts for leads
+  }
+
+  // Review activity -- reviews sent in last 30 days
+  if (hasReview) {
+    maxScore += 40;
+    const logs = reviewLogs[key] || [];
+    const recentReviews = logs.filter(r => (now - new Date(r.date).getTime()) < 30 * day);
+    score += Math.min(40, recentReviews.length * 4);
+  }
+
+  // Activation status
+  maxScore += 10;
+  if (client.activated) score += 10;
+
+  // Portal engagement -- recently logged in (approximated by last update request)
+  maxScore += 10;
+  if (client.lastActivity && (now - new Date(client.lastActivity).getTime()) < 14 * day) {
+    score += 10;
+  }
+
+  // Normalize to 0-100
+  return maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+}
+
+const healthScoreCache = {};
+const HEALTH_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+
+app.get('/health-score/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const cached = healthScoreCache[key];
+  if (cached && (Date.now() - cached.ts) < HEALTH_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+  const score = calculateHealthScore(key);
+  const label = score >= 70 ? 'Active' : score >= 40 ? 'Slowing down' : 'At risk';
+  const color = score >= 70 ? '#15803d' : score >= 40 ? '#b45309' : '#dc2626';
+  const data = { bizKey: key, score, label, color };
+  healthScoreCache[key] = { data, ts: Date.now() };
+  res.json(data);
+});
+
+// Weekly health report to Eli
+async function sendWeeklyHealthReport() {
+  const allKeys = Object.keys(clientInfo).filter(k => clientInfo[k].activated);
+  if (allKeys.length === 0) return;
+
+  const scores = allKeys.map(k => ({
+    key: k,
+    bizName: clientInfo[k].bizName || k,
+    score: calculateHealthScore(k),
+    label: calculateHealthScore(k) >= 70 ? 'Active' : calculateHealthScore(k) >= 40 ? 'Slowing down' : 'At risk',
+    email: clientInfo[k].email || ''
+  })).sort((a, b) => a.score - b.score);
+
+  const atRisk = scores.filter(s => s.score < 40);
+  const slowingDown = scores.filter(s => s.score >= 40 && s.score < 70);
+  const active = scores.filter(s => s.score >= 70);
+
+  const makeRow = (s) => `<tr><td style="padding:8px 12px;font-size:13px;color:#0f172a;">${s.bizName}</td><td style="padding:8px 12px;font-size:13px;font-weight:700;color:${s.score >= 70 ? '#15803d' : s.score >= 40 ? '#b45309' : '#dc2626'};">${s.score}/100</td><td style="padding:8px 12px;font-size:13px;color:#64748b;">${s.label}</td></tr>`;
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'Weekly Client Health Report -- ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px;">
+          <h2 style="color:#0A2540;margin-bottom:4px;">Client Health Report</h2>
+          <p style="color:#64748b;font-size:14px;margin-bottom:20px;">${allKeys.length} active clients</p>
+          ${atRisk.length > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;margin-bottom:16px;"><p style="font-size:13px;font-weight:700;color:#dc2626;margin:0 0 10px;">At Risk (${atRisk.length}) -- reach out this week</p><table style="width:100%;border-collapse:collapse;">${atRisk.map(makeRow).join('')}</table></div>` : ''}
+          ${slowingDown.length > 0 ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:16px;"><p style="font-size:13px;font-weight:700;color:#b45309;margin:0 0 10px;">Slowing Down (${slowingDown.length})</p><table style="width:100%;border-collapse:collapse;">${slowingDown.map(makeRow).join('')}</table></div>` : ''}
+          ${active.length > 0 ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;"><p style="font-size:13px;font-weight:700;color:#15803d;margin:0 0 10px;">Active (${active.length})</p><table style="width:100%;border-collapse:collapse;">${active.map(makeRow).join('')}</table></div>` : ''}
+          <p style="color:#94a3b8;font-size:12px;text-align:center;margin-top:20px;">Sent by Netify Builds</p>
+        </div>`
+      })
+    });
+    console.log('[Health Report] Sent --', allKeys.length, 'clients');
+  } catch(e) { console.error('[Health Report Error]', e.message); }
+}
+
+app.post('/send-health-report', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+  await sendWeeklyHealthReport();
+  res.json({ success: true });
+});
+
+// ── MONTHLY REVIEW REPORT ──
+async function sendMonthlyReviewReport(bizKey) {
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key];
+  if (!client || !client.email) return;
+  const logs = reviewLogs[key] || [];
+  if (logs.length === 0) return;
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+  const monthName = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  const thisMonth = logs.filter(r => {
+    const d = new Date(r.date);
+    return d >= monthStart && d <= monthEnd;
+  });
+
+  const positive = thisMonth.filter(r => r.type === 'positive').length;
+  const negative = thisMonth.filter(r => r.type === 'negative').length;
+  const total = thisMonth.length;
+  const allTime = logs.filter(r => r.type === 'positive').length;
+  const satRate = total > 0 ? Math.round((positive / total) * 100) : 0;
+  const negativeFeedback = thisMonth.filter(r => r.type === 'negative' && r.feedback);
+  const unresolvedCount = negativeFeedback.filter(r => !r.resolved).length;
+
+  const satColor = satRate >= 90 ? '#15803d' : satRate >= 70 ? '#b45309' : '#dc2626';
+  const satBg = satRate >= 90 ? '#dcfce7' : satRate >= 70 ? '#fef9c3' : '#fee2e2';
+  const satLabel = satRate >= 90 ? 'Excellent' : satRate >= 70 ? 'Good' : 'Needs attention';
+
+  const negativeSummary = negativeFeedback.length > 0
+    ? negativeFeedback.slice(0, 3).map(f => '<li style="font-size:13px;color:#374151;margin-bottom:8px;line-height:1.6;">' + (f.feedback || 'No details').substring(0, 120) + (f.feedback && f.feedback.length > 120 ? '...' : '') + '</li>').join('')
+    : '<li style="font-size:13px;color:#15803d;">No negative feedback this month.</li>';
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: client.email,
+        bcc: 'dolbeereli95@gmail.com',
+        subject: 'Your ' + monthName + ' Review Report -- ' + (client.bizName || bizKey),
+        html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:0;background:#f8fafc;border-radius:16px;overflow:hidden;">
+          <div style="background:#0A2540;padding:24px;text-align:center;">
+            <p style="color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 4px;">Monthly Review Report</p>
+            <h1 style="color:white;font-size:1.3rem;font-weight:800;margin:0;">${client.bizName || bizKey}</h1>
+            <p style="color:rgba(255,255,255,0.4);font-size:13px;margin:6px 0 0;">${monthName}</p>
+          </div>
+          <div style="padding:24px;">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+              <div style="background:white;border-radius:10px;padding:16px;text-align:center;border:1px solid #e2e8f0;">
+                <div style="font-size:28px;font-weight:800;color:#0f172a;">${total}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Responses</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:16px;text-align:center;border:1px solid #e2e8f0;">
+                <div style="font-size:28px;font-weight:800;color:#15803d;">${positive}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Sent to Google</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:16px;text-align:center;border:1px solid #e2e8f0;">
+                <div style="font-size:28px;font-weight:800;color:#dc2626;">${negative}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Caught privately</div>
+              </div>
+            </div>
+            <div style="background:white;border-radius:10px;padding:16px 20px;border:1px solid #e2e8f0;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#0f172a;">Satisfaction rate this month</div>
+                <div style="font-size:12px;color:#94a3b8;margin-top:2px;">All time happy customers sent to Google: ${allTime}</div>
+              </div>
+              <div style="background:${satBg};color:${satColor};font-size:16px;font-weight:800;padding:8px 16px;border-radius:99px;">${total > 0 ? satRate + '%' : 'N/A'} ${total > 0 ? satLabel : ''}</div>
+            </div>
+            ${unresolvedCount > 0 ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:16px;"><p style="font-size:13px;font-weight:700;color:#dc2626;margin:0 0 6px;">You have ' + unresolvedCount + ' unresolved feedback item' + (unresolvedCount > 1 ? 's' : '') + ' from this month</p><p style="font-size:12px;color:#555;margin:0;">Log into your portal to review and mark them resolved.</p></div>' : ''}
+            <div style="background:white;border-radius:10px;padding:16px 20px;border:1px solid #e2e8f0;margin-bottom:20px;">
+              <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin:0 0 10px;">Private feedback this month</p>
+              <ul style="margin:0;padding-left:16px;">${negativeSummary}</ul>
+            </div>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;margin:0;">Questions? Reply to this email or text Eli at (937) 367-1847.<br>Sent by Netify Builds</p>
+          </div>
+        </div>`
+      })
+    });
+    console.log('[Monthly Report] Sent for', bizKey);
+  } catch(e) {
+    console.error('[Monthly Report Error]', e.message);
+  }
+}
+
+// Endpoint to trigger monthly reports manually or via Railway cron
+app.post('/send-monthly-reports', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+  const keys = Object.keys(clientInfo).filter(k => {
+    const c = clientInfo[k];
+    return c.activated && (c.plan === 'review' || c.plan === 'bundle' || c.plan === 'review_campaign' || c.plan === 'all');
+  });
+  console.log('[Monthly Reports] Sending to', keys.length, 'clients');
+  for (const key of keys) {
+    await sendMonthlyReviewReport(key);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  res.json({ success: true, sent: keys.length });
 });
 
 app.use((req, res) => {
