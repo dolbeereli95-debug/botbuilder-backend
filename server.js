@@ -231,6 +231,27 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     return res.json({ reply: adminText, adminMode: true });
   }
 
+  // Handle quick reply buttons that need a follow-up prompt
+  if (isAdminSession) {
+    if (lastUserMsg === 'Make a website change') {
+      return res.json({ reply: 'Sure! What would you like to change? Just describe it in plain English — for example: "Change my phone number to 937-555-0123" or "Update my hours to Monday through Friday 8am to 5pm."', adminMode: true });
+    }
+    if (lastUserMsg === 'Advise me on my site') {
+      const client = clientInfo[bizKey] || {};
+      let advice = 'Let me take a look at your site.';
+      if (client.advisorChecks && client.advisorChecks.length > 0) {
+        const high = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
+        const med = client.advisorChecks.filter(function(c) { return c.impact === 'medium'; });
+        advice = 'Based on what I can see, here are the most important things to address: ';
+        if (high.length > 0) advice += high.map(function(c) { return c.issue + '. ' + c.fix; }).join(' ');
+        if (med.length > 0) advice += ' Also worth looking at: ' + med.map(function(c) { return c.issue; }).join(', ') + '.';
+      } else {
+        advice = "I haven't scanned your site yet. Open your website in Chrome with the extension active and I'll be able to give you specific advice. In the meantime, what aspect would you like advice on: Google rankings, conversions, trust signals, or something else?";
+      }
+      return res.json({ reply: advice, adminMode: true });
+    }
+  }
+
   // Check for revert command
   const revertTriggers = ['undo', 'revert', 'undo that', 'revert that', 'go back', 'undo last change', 'revert last change'];
   if (isAdminSession && revertTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
@@ -272,7 +293,11 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
   }
 
   // Check if already in admin mode (previous messages show admin was authenticated)
-  const isAdminSession = messages.length > 1 && messages.some(m => m.content && m.content.trim().toLowerCase().replace(/\s+/g, '_') === (bizKey || '').toLowerCase());
+  // Check admin session -- look for bizKey in any user message OR an assistant message containing admin greeting
+  const isAdminSession = messages.length > 1 && (
+    messages.some(function(m) { return m.role === 'user' && m.content && m.content.trim().toLowerCase().replace(/\s+/g, '_') === (bizKey || '').toLowerCase(); }) ||
+    messages.some(function(m) { return m.role === 'assistant' && m.content && (m.content.includes('edit your website') || m.content.includes('admin mode') || m.content.includes('website change') || m.content.includes('improve it')); })
+  );
 
   if (isAdminSession && bizKey && clientInfo[bizKey]) {
     const client = clientInfo[bizKey];
