@@ -38,6 +38,96 @@ function debouncedSave(filename, data) {
   saveTimers[filename] = setTimeout(function() { saveData(filename, data); }, 1000);
 }
 
+// ── WEBSOCKET SERVER FOR EXTENSION ──
+const { WebSocketServer } = require('ws');
+const extensionClients = {}; // bizKey -> ws connection
+
+function setupWebSocketServer(server) {
+  const wss = new WebSocketServer({ server, path: '/extension-ws' });
+  wss.on('connection', function(ws, req) {
+    const url = new URL(req.url, 'http://localhost');
+    const bizKey = url.searchParams.get('bizKey');
+    if (!bizKey) { ws.close(); return; }
+
+    extensionClients[bizKey] = ws;
+    console.log('[Extension] Connected:', bizKey);
+
+    ws.on('message', function(data) {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'register') {
+          extensionClients[bizKey] = ws;
+          // Auto-scan if no scan exists yet
+          if (clientInfo[bizKey] && !clientInfo[bizKey].siteScan) {
+            console.log('[Extension] First connect for', bizKey, '-- requesting auto-scan');
+            setTimeout(function() {
+              if (extensionClients[bizKey] && extensionClients[bizKey].readyState === 1) {
+                extensionClients[bizKey].send(JSON.stringify({ type: 'scan_request' }));
+              }
+            }, 2000);
+          }
+        }
+        if (msg.type === 'scan_result') {
+          if (clientInfo[bizKey]) {
+            clientInfo[bizKey].siteScan = { html: msg.html, scannedAt: new Date().toISOString() };
+            debouncedSave('client_info.json', clientInfo);
+            console.log('[Extension] Site scan stored for', bizKey);
+          }
+        }
+        if (msg.type === 'advisor_checks') {
+          if (clientInfo[bizKey]) {
+            clientInfo[bizKey].advisorChecks = msg.checks;
+            clientInfo[bizKey].advisorChecksAt = new Date().toISOString();
+            debouncedSave('client_info.json', clientInfo);
+          }
+        }
+        if (msg.type === 'edit_result') {
+          console.log('[Extension] Edit result for', bizKey, ':', msg.success ? 'success' : msg.error);
+        }
+        if (msg.type === 'page_ready') {
+          // Check for pending edits when client opens their site
+          if (clientInfo[bizKey] && clientInfo[bizKey].pendingEdits && clientInfo[bizKey].pendingEdits.length > 0) {
+            clientInfo[bizKey].pendingEdits.forEach(function(edit) {
+              ws.send(JSON.stringify({ type: 'edit', edit: edit, editId: edit.editId }));
+            });
+            clientInfo[bizKey].pendingEdits = [];
+            debouncedSave('client_info.json', clientInfo);
+          }
+        }
+        if (msg.type === 'edit_queued') {
+          console.log('[Extension] Edit queued for next visit:', bizKey);
+        }
+      } catch(e) { console.error('[Extension WS Error]', e.message); }
+    });
+
+    ws.on('close', function() {
+      if (extensionClients[bizKey] === ws) delete extensionClients[bizKey];
+      console.log('[Extension] Disconnected:', bizKey);
+    });
+  });
+  return wss;
+}
+
+// Function to send edit command to extension
+async function sendEditToExtension(bizKey, edit) {
+  const ws = extensionClients[bizKey];
+  const editId = Date.now().toString();
+  edit.editId = editId;
+
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'edit', edit: edit, editId: editId }));
+    return { sent: true, editId };
+  } else {
+    // Queue for when extension reconnects
+    if (clientInfo[bizKey]) {
+      if (!clientInfo[bizKey].pendingEdits) clientInfo[bizKey].pendingEdits = [];
+      clientInfo[bizKey].pendingEdits.push(edit);
+      debouncedSave('client_info.json', clientInfo);
+    }
+    return { sent: false, queued: true, editId };
+  }
+}
+
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true);
@@ -99,8 +189,133 @@ app.post('/chat', rateLimit, async (req, res) => {
     return res.status(400).json({ error: 'systemPrompt is required' });
   }
 
-  // Detect handoff request keywords
+  // Detect admin mode -- if the message IS the bizKey, switch to admin mode
   const lastUserMsg = (messages[messages.length - 1] || {}).content || '';
+  const trimmedMsg = lastUserMsg.trim().toLowerCase().replace(/\s+/g, '_');
+
+  // Check if this is an admin code entry
+  if (bizKey && trimmedMsg === bizKey.toLowerCase() && clientInfo[bizKey]) {
+    const client = clientInfo[bizKey];
+    // Fetch site scan for context
+    let siteContext = '';
+    if (client.siteScan && client.siteScan.html) {
+      siteContext = '\n\nHere is what we know about their website:\n' + extractSiteContent(client.siteScan.html);
+    }
+    if (client.advisorChecks && client.advisorChecks.length > 0) {
+      siteContext += '\n\nAutomated issues detected on their site:\n' +
+        client.advisorChecks.map(function(c) { return '- [' + c.impact.toUpperCase() + '] ' + c.issue + '. Fix: ' + c.fix; }).join('\n');
+    }
+    const adminSystemPrompt = `You are a smart website advisor and editor for ${client.bizName || 'this business'}. The business owner just authenticated. Greet them warmly by business name and let them know they can ask you to edit their website, get advice on improving it, or ask any questions about their business setup.
+
+You have two modes in this conversation:
+
+EDITOR MODE: When they ask you to change something on their website, generate a structured edit command at the end of your response:\n\nFor text changes: EDIT_COMMAND|{\"type\":\"text_replace\",\"oldText\":\"exact current text\",\"newText\":\"replacement text\",\"description\":\"what this change does\"}\n\nFor image changes: EDIT_COMMAND|{\"type\":\"image_replace\",\"selector\":\"css selector\",\"altText\":\"which image\",\"description\":\"which image to replace\"}\n\nFor SEO changes: EDIT_COMMAND|{\"type\":\"seo_update\",\"metaTitle\":\"new title if changing\",\"metaDescription\":\"new description if changing\",\"description\":\"updating SEO fields\"}\n\nADVISOR MODE: When they ask why their site is not performing, what to improve, why they are not ranking on Google -- give specific actionable advice based on their actual site content. Be direct and concrete, never generic.\n\nKeep responses conversational and warm. 2-3 sentences max unless they need detailed advice. Never use markdown formatting.${siteContext}`;
+
+    // Build proactive issues message if we have advisor checks
+    let adminGreetingContent = 'Admin authenticated';
+    if (client.advisorChecks && client.advisorChecks.length > 0) {
+      const highIssues = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
+      if (highIssues.length > 0) {
+        adminGreetingContent = 'Admin authenticated. Please greet them and immediately mention you noticed ' + highIssues.length + ' high-priority issue' + (highIssues.length > 1 ? 's' : '') + ' on their site that could be costing them leads. List them briefly and offer to fix them.';
+      }
+    }
+
+    const adminResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 600,
+      system: adminSystemPrompt,
+      messages: [{ role: 'user', content: adminGreetingContent }]
+    });
+
+    const adminText = adminResponse.content[0].text;
+    return res.json({ reply: adminText, adminMode: true });
+  }
+
+  // Check for revert command
+  const revertTriggers = ['undo', 'revert', 'undo that', 'revert that', 'go back', 'undo last change', 'revert last change'];
+  if (isAdminSession && revertTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
+    const ws = extensionClients[bizKey];
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'revert_last' }));
+      return res.json({ reply: 'Done, that change has been reverted.', adminMode: true });
+    } else {
+      return res.json({ reply: 'Your browser needs to be open on your website for me to revert changes. Open your site in Chrome and try again.', adminMode: true });
+    }
+  }
+
+  const revertAllTriggers = ['undo all', 'revert all', 'revert all changes', 'undo everything'];
+  if (isAdminSession && revertAllTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
+    const ws = extensionClients[bizKey];
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'revert_all' }));
+      return res.json({ reply: 'All changes have been reverted.', adminMode: true });
+    }
+  }
+
+  // Check for admin exit command
+  if (isAdminSession && (lastUserMsg.toLowerCase() === 'exit admin' || lastUserMsg.toLowerCase() === 'done' || lastUserMsg.toLowerCase() === 'exit')) {
+    // Send change summary email if there were changes this session
+    const client = clientInfo[bizKey];
+    if (client && client.changeHistory && client.changeHistory.length > 0) {
+      const recentChanges = client.changeHistory.filter(function(c) {
+        return c.savedAt && (Date.now() - new Date(c.savedAt).getTime()) < 2 * 60 * 60 * 1000; // last 2 hours
+      });
+      if (recentChanges.length > 0 && client.email) {
+        fetch('https://botbuilder-backend-production.up.railway.app/send-change-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bizKey: bizKey, changes: recentChanges })
+        }).catch(function(e) { console.error('[Summary email error]', e.message); });
+      }
+    }
+    return res.json({ reply: 'You\'re back in customer mode. Your website changes are saved.', adminMode: false, exitAdmin: true });
+  }
+
+  // Check if already in admin mode (previous messages show admin was authenticated)
+  const isAdminSession = messages.length > 1 && messages.some(m => m.content && m.content.trim().toLowerCase().replace(/\s+/g, '_') === (bizKey || '').toLowerCase());
+
+  if (isAdminSession && bizKey && clientInfo[bizKey]) {
+    const client = clientInfo[bizKey];
+    let siteContext = '';
+    if (client.siteScan && client.siteScan.html) {
+      siteContext = '\n\nWebsite content summary:\n' + extractSiteContent(client.siteScan.html);
+    }
+    const adminSystemPrompt = `You are a website advisor and editor for ${client.bizName || 'this business'}. The owner is authenticated.
+
+EDITOR MODE: When asked to change website content, end your response with the appropriate command:
+
+Text: EDIT_COMMAND|{"type":"text_replace","oldText":"exact current text","newText":"new text","description":"brief description"}
+Image: EDIT_COMMAND|{"type":"image_replace","selector":"css selector or blank","altText":"which image","description":"which image to replace"}
+SEO: EDIT_COMMAND|{"type":"seo_update","metaTitle":"new title","metaDescription":"new description","description":"SEO update"}
+
+ADVISOR MODE: Give specific actionable advice. Be direct and concrete, never generic.
+
+Keep responses short and conversational. Never use markdown.${siteContext}`;
+
+    const adminResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 600,
+      system: adminSystemPrompt,
+      messages: messages.filter(m => m.content !== bizKey)
+    });
+
+    let adminText = adminResponse.content[0].text;
+
+    // Parse and send edit command if present
+    if (adminText.includes('EDIT_COMMAND|')) {
+      const parts = adminText.split('EDIT_COMMAND|');
+      const replyText = parts[0].trim();
+      try {
+        const editData = JSON.parse(parts[1].trim());
+        await sendEditToExtension(bizKey, editData);
+        return res.json({ reply: replyText, adminMode: true, editSent: true });
+      } catch(e) {
+        return res.json({ reply: replyText, adminMode: true });
+      }
+    }
+
+    return res.json({ reply: adminText, adminMode: true });
+  }
   const handoffKeywords = ['speak to someone', 'talk to someone', 'real person', 'human', 'speak to a person', 'call me', 'representative', 'agent', 'talk to eli', 'speak to eli'];
   const wantsHandoff = handoffKeywords.some(kw => lastUserMsg.toLowerCase().includes(kw));
   if (wantsHandoff && bizKey) {
@@ -1877,11 +2092,195 @@ app.post('/send-monthly-reports', async (req, res) => {
   res.json({ success: true, sent: keys.length });
 });
 
+// Helper: extract meaningful content from raw HTML
+function extractSiteContent(html) {
+  // Strip scripts, styles, and HTML tags
+  let text = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Extract key elements
+  const phoneMatch = html.match(/(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
+  const emailMatch = html.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/);
+  const hoursMatch = html.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)[\s\S]{0,100}/gi);
+  const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
+  const h1s = [...html.matchAll(/<h1[^>]*>(.*?)<\/h1>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
+  const h2s = [...html.matchAll(/<h2[^>]*>(.*?)<\/h2>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 6);
+  const metaDesc = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
+
+  return [
+    titleMatch ? 'PAGE TITLE: ' + titleMatch[1].replace(/<[^>]+>/g, '') : '',
+    metaDesc ? 'META DESCRIPTION: ' + metaDesc[1] : '',
+    h1s.length ? 'H1 HEADINGS: ' + h1s.join(' | ') : '',
+    h2s.length ? 'H2 HEADINGS: ' + h2s.join(' | ') : '',
+    phoneMatch ? 'PHONE: ' + phoneMatch[1] : 'PHONE: not found',
+    emailMatch ? 'EMAIL: ' + emailMatch[1] : '',
+    hoursMatch ? 'HOURS CONTENT: ' + hoursMatch.slice(0,3).join(' ') : 'HOURS: not clearly listed',
+    'PAGE TEXT SAMPLE: ' + text.substring(0, 2000)
+  ].filter(Boolean).join('\n');
+}
+
+// ── ADMIN MODE: ANALYZE SITE ──
+app.post('/analyze-site', async (req, res) => {
+  const { bizKey } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key];
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  // Return cached scan if fresh (less than 24 hours old)
+  if (client.siteScan && client.siteScan.scannedAt) {
+    const age = Date.now() - new Date(client.siteScan.scannedAt).getTime();
+    if (age < 24 * 60 * 60 * 1000) {
+      return res.json({ html: client.siteScan.html, cached: true });
+    }
+  }
+
+  // Request fresh scan from extension if connected
+  const ws = extensionClients[key];
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'scan_request' }));
+    return res.json({ scanning: true, message: 'Scan requested from extension' });
+  }
+
+  // Fall back to fetching the site directly
+  try {
+    const siteUrl = client.domain ? 'https://' + client.domain : null;
+    if (!siteUrl) return res.json({ error: 'No site URL on file' });
+    const response = await fetch(siteUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NetifyBuilds/1.0)' } });
+    const html = await response.text();
+    client.siteScan = { html: html.substring(0, 50000), scannedAt: new Date().toISOString() };
+    debouncedSave('client_info.json', clientInfo);
+    res.json({ html: client.siteScan.html, cached: false });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not fetch site: ' + e.message });
+  }
+});
+
+// ── ADMIN MODE: SAVE CHANGE TO HISTORY ──
+app.post('/save-change-history', async (req, res) => {
+  const { bizKey, change } = req.body;
+  if (!bizKey || !change) return res.status(400).json({ error: 'bizKey and change required' });
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  if (!clientInfo[key].changeHistory) clientInfo[key].changeHistory = [];
+  change.savedAt = new Date().toISOString();
+  clientInfo[key].changeHistory.unshift(change);
+  // Keep last 20 changes only
+  clientInfo[key].changeHistory = clientInfo[key].changeHistory.slice(0, 20);
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true });
+});
+
+app.get('/change-history/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const history = (clientInfo[key] && clientInfo[key].changeHistory) || [];
+  res.json({ history });
+});
+
+// ── ADMIN MODE: SEND CHANGE SUMMARY EMAIL ──
+app.post('/send-change-summary', async (req, res) => {
+  const { bizKey, changes } = req.body;
+  if (!bizKey || !changes || !changes.length) return res.status(400).json({ error: 'bizKey and changes required' });
+  const key = bizKey.toLowerCase();
+  const client = clientInfo[key];
+  if (!client || !client.email) return res.status(404).json({ error: 'Client not found' });
+
+  try {
+    const changeRows = changes.map(function(c) {
+      return '<tr><td style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #f1f5f9;">' +
+        (c.description || c.type || 'Change') + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;color:#94a3b8;border-bottom:1px solid #f1f5f9;">' +
+        new Date(c.savedAt || Date.now()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) +
+        '</td></tr>';
+    }).join('');
+
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: client.email,
+        bcc: 'dolbeereli95@gmail.com',
+        subject: 'Website changes summary -- ' + (client.bizName || bizKey),
+        html: '<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px;">' +
+          '<div style="background:#0A2540;padding:20px 24px;border-radius:10px;margin-bottom:20px;">' +
+          '<h2 style="color:white;margin:0;font-size:1.1rem;">Website update summary</h2>' +
+          '<p style="color:rgba(255,255,255,0.45);font-size:13px;margin:4px 0 0;">' + (client.bizName || bizKey) + '</p>' +
+          '</div>' +
+          '<p style="font-size:14px;color:#374151;margin-bottom:16px;">Here are the changes made to your website in this session:</p>' +
+          '<table style="width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">' +
+          '<thead><tr><th style="padding:10px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Change</th>' +
+          '<th style="padding:10px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Time</th></tr></thead>' +
+          '<tbody>' + changeRows + '</tbody></table>' +
+          '<p style="font-size:12px;color:#94a3b8;margin-top:16px;text-align:center;">To undo any of these changes, type "undo" into your bot while in admin mode.</p>' +
+          '</div>'
+      })
+    });
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[Change Summary Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── ADMIN MODE: REVERT LAST CHANGE ──
+app.post('/revert-edit', async (req, res) => {
+  const { bizKey, revertAll } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  const ws = extensionClients[key];
+  if (!ws || ws.readyState !== 1) return res.status(503).json({ error: 'Extension not connected' });
+  ws.send(JSON.stringify({ type: revertAll ? 'revert_all' : 'revert_last' }));
+  res.json({ success: true });
+});
+
+// ── ADMIN MODE: SEO UPDATE ──
+app.post('/update-seo', async (req, res) => {
+  const { bizKey, metaTitle, metaDescription } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+
+  // Store SEO updates in client record
+  if (!clientInfo[key].seoUpdates) clientInfo[key].seoUpdates = {};
+  if (metaTitle) clientInfo[key].seoUpdates.metaTitle = metaTitle;
+  if (metaDescription) clientInfo[key].seoUpdates.metaDescription = metaDescription;
+  clientInfo[key].seoUpdates.updatedAt = new Date().toISOString();
+  debouncedSave('client_info.json', clientInfo);
+
+  // Send to extension to apply
+  const ws = extensionClients[key];
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({
+      type: 'seo_update',
+      metaTitle,
+      metaDescription
+    }));
+  }
+  res.json({ success: true });
+});
+
+// ── ADMIN MODE: APPLY EDIT ──
+app.post('/apply-edit', async (req, res) => {
+  const { bizKey, edit } = req.body;
+  if (!bizKey || !edit) return res.status(400).json({ error: 'bizKey and edit required' });
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+
+  const result = await sendEditToExtension(key, edit);
+  res.json(result);
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
+  setupWebSocketServer(server);
   console.log('BotBuilder backend running on port ' + PORT);
   if (!process.env.ANTHROPIC_API_KEY) console.warn('WARNING: ANTHROPIC_API_KEY not set!');
   if (!process.env.RESEND_API_KEY) console.warn('WARNING: RESEND_API_KEY not set!');
