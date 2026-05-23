@@ -221,7 +221,7 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     }
 
     const adminResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: adminSystemPrompt,
       messages: [{ role: 'user', content: adminGreetingContent }]
@@ -293,7 +293,7 @@ ADVISOR MODE: Give specific actionable advice. Be direct and concrete, never gen
 Keep responses short and conversational. Never use markdown.${siteContext}`;
 
     const adminResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: adminSystemPrompt,
       messages: messages.filter(m => m.content !== bizKey)
