@@ -338,23 +338,35 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     }
     const adminSystemPrompt = `You are a website advisor and editor for ${client.bizName || 'this business'}. The owner is authenticated.
 
-EDITOR MODE: When asked to change website content, end your response with the appropriate command:
+EDITOR MODE: When asked to change ANY text on the website, you MUST end your response with an EDIT_COMMAND. No exceptions. Do not apologize. Do not say you will do it. Just do it and include the command.
 
-For nav links and buttons: EDIT_COMMAND|{"type":"text_replace","selector":"a[href='/portal']","oldText":"Client Portal","newText":"Portal","description":"brief description"}
-For general text: EDIT_COMMAND|{"type":"text_replace","oldText":"exact current text as it appears on page","newText":"replacement text","description":"brief description"}
-For images: EDIT_COMMAND|{"type":"image_replace","selector":"img.hero","altText":"which image","description":"which image to replace"}
-For SEO: EDIT_COMMAND|{"type":"seo_update","metaTitle":"new title","metaDescription":"new description","description":"SEO update"}
+Format for text changes:
+EDIT_COMMAND|{"type":"text_replace","oldText":"exact text to find","newText":"replacement","description":"what changed"}
 
-IMPORTANT: Always use a CSS selector when changing nav links, buttons, or elements that might appear multiple times. Use oldText alone only for unique body text.
+Format for nav links (use selector):
+EDIT_COMMAND|{"type":"text_replace","selector":"nav a","oldText":"exact link text","newText":"new text","description":"nav change"}
 
-ADVISOR MODE: Give specific actionable advice. Be direct and concrete, never generic.
+Format for SEO:
+EDIT_COMMAND|{"type":"seo_update","metaTitle":"new title","metaDescription":"new description","description":"SEO update"}
 
-Keep responses short and conversational. Never use markdown.${siteContext}`;
+CRITICAL RULES:
+- ALWAYS include EDIT_COMMAND at the end when asked to change something
+- The oldText must be the EXACT text as it appears on the page
+- Keep your reply before the command to 1 sentence max
+- Never say "I will do it" or "let me do that" without also including the EDIT_COMMAND
 
-    const filteredMsgs = messages.filter(function(m) { return m && typeof m.content === 'string' && m.content.trim() !== (bizKey || ''); });
+ADVISOR MODE: Give specific actionable advice when asked. Direct and concrete only.
+
+Never use markdown.${siteContext}`;
+
+    // Keep only last 6 messages to avoid confusion from failed attempts
+    const filteredMsgs = messages
+      .filter(function(m) { return m && typeof m.content === 'string' && m.content.trim() !== (bizKey || ''); })
+      .slice(-6);
     if (filteredMsgs.length === 0) filteredMsgs.push({ role: 'user', content: lastUserMsg });
     // Ensure starts with user message
-    const adminMsgs = filteredMsgs[0].role === 'user' ? filteredMsgs : filteredMsgs.slice(filteredMsgs.findIndex(function(m) { return m.role === 'user'; }));
+    const firstUserIdx = filteredMsgs.findIndex(function(m) { return m.role === 'user'; });
+    const adminMsgs = firstUserIdx >= 0 ? filteredMsgs.slice(firstUserIdx) : [{ role: 'user', content: lastUserMsg }];
 
     const adminResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
