@@ -320,11 +320,16 @@ ADVISOR MODE: Give specific actionable advice. Be direct and concrete, never gen
 
 Keep responses short and conversational. Never use markdown.${siteContext}`;
 
+    const filteredMsgs = messages.filter(function(m) { return m && typeof m.content === 'string' && m.content.trim() !== (bizKey || ''); });
+    if (filteredMsgs.length === 0) filteredMsgs.push({ role: 'user', content: lastUserMsg });
+    // Ensure starts with user message
+    const adminMsgs = filteredMsgs[0].role === 'user' ? filteredMsgs : filteredMsgs.slice(filteredMsgs.findIndex(function(m) { return m.role === 'user'; }));
+
     const adminResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: adminSystemPrompt,
-      messages: messages.filter(m => m.content !== bizKey)
+      messages: adminMsgs.length > 0 ? adminMsgs : [{ role: 'user', content: lastUserMsg }]
     });
 
     let adminText = adminResponse.content[0].text;
