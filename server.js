@@ -312,9 +312,12 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
 
 EDITOR MODE: When asked to change website content, end your response with the appropriate command:
 
-Text: EDIT_COMMAND|{"type":"text_replace","oldText":"exact current text","newText":"new text","description":"brief description"}
-Image: EDIT_COMMAND|{"type":"image_replace","selector":"css selector or blank","altText":"which image","description":"which image to replace"}
-SEO: EDIT_COMMAND|{"type":"seo_update","metaTitle":"new title","metaDescription":"new description","description":"SEO update"}
+For nav links and buttons: EDIT_COMMAND|{"type":"text_replace","selector":"a[href='/portal']","oldText":"Client Portal","newText":"Portal","description":"brief description"}
+For general text: EDIT_COMMAND|{"type":"text_replace","oldText":"exact current text as it appears on page","newText":"replacement text","description":"brief description"}
+For images: EDIT_COMMAND|{"type":"image_replace","selector":"img.hero","altText":"which image","description":"which image to replace"}
+For SEO: EDIT_COMMAND|{"type":"seo_update","metaTitle":"new title","metaDescription":"new description","description":"SEO update"}
+
+IMPORTANT: Always use a CSS selector when changing nav links, buttons, or elements that might appear multiple times. Use oldText alone only for unique body text.
 
 ADVISOR MODE: Give specific actionable advice. Be direct and concrete, never generic.
 
@@ -340,10 +343,20 @@ Keep responses short and conversational. Never use markdown.${siteContext}`;
       const replyText = parts[0].trim();
       try {
         const editData = JSON.parse(parts[1].trim());
-        await sendEditToExtension(bizKey, editData);
-        return res.json({ reply: replyText, adminMode: true, editSent: true });
+        const sendResult = await sendEditToExtension(bizKey, editData);
+        console.log('[Admin Edit] Send result for', bizKey, ':', JSON.stringify(sendResult));
+        const ws = extensionClients[bizKey];
+        const isConnected = ws && ws.readyState === 1;
+        let finalReply = replyText || 'Done!';
+        if (!isConnected) {
+          finalReply = (replyText || 'Got it!') + ' The change is queued — open your website in Chrome with the extension active and it will apply automatically.';
+        } else {
+          finalReply = (replyText || 'Done!') + ' Check your website — the change should appear now.';
+        }
+        return res.json({ reply: finalReply, adminMode: true, editSent: true });
       } catch(e) {
-        return res.json({ reply: replyText, adminMode: true });
+        console.error('[Admin Edit Parse Error]', e.message, 'Raw:', parts[1] ? parts[1].substring(0, 200) : 'none');
+        return res.json({ reply: (replyText || 'I generated the change but had trouble sending it. Try describing it again.'), adminMode: true });
       }
     }
 
@@ -824,11 +837,18 @@ app.post('/extract-website', async (req, res) => {
 
   try {
     // Fetch the website
-    const siteRes = await fetch(url.startsWith('http') ? url : 'https://' + url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BotBuilder/1.0)' },
-      signal: AbortSignal.timeout(10000)
+    const targetUrl = url.startsWith('http') ? url : 'https://' + url;
+    const siteRes = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Cache-Control': 'no-cache'
+      },
+      signal: AbortSignal.timeout(15000),
+      redirect: 'follow'
     });
-    if (!siteRes.ok) return res.status(400).json({ error: 'Could not fetch website.' });
+    if (!siteRes.ok) return res.status(400).json({ error: 'Could not fetch website (status ' + siteRes.status + ').' });
 
     const html = await siteRes.text();
 
