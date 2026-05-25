@@ -376,6 +376,10 @@ Never use markdown.${siteContext}`;
     });
 
     let adminText = adminResponse.content[0].text;
+    console.log('[Admin Raw Response]', JSON.stringify(adminText.substring(0, 500)));
+
+    // Normalize -- Claude sometimes puts EDIT_COMMAND on a new line with extra spaces
+    adminText = adminText.replace(/\n\s*EDIT_COMMAND\|/g, '\nEDIT_COMMAND|');
 
     // Parse and send edit command if present
     if (adminText.includes('EDIT_COMMAND|')) {
