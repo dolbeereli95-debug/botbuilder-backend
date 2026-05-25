@@ -393,9 +393,9 @@ Never use markdown.${siteContext}`;
         const isConnected = ws && ws.readyState === 1;
         let finalReply = replyText || 'Done!';
         if (!isConnected) {
-          finalReply = (replyText || 'Got it!') + ' The change is queued — open your website in Chrome with the extension active and it will apply automatically.';
+          finalReply = (replyText || 'Got it!') + ' The change is queued. Open your website in Chrome with the extension active and it will apply.';
         } else {
-          finalReply = (replyText || 'Done!') + ' Check your website — the change should appear now.';
+          finalReply = (replyText || 'Done!') + ' Check your website — it should show now. Note: this is a live preview. To make it permanent, update your website file and push it.';
         }
         return res.json({ reply: finalReply, adminMode: true, editSent: true });
       } catch(e) {
