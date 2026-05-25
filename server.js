@@ -231,27 +231,6 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     return res.json({ reply: adminText, adminMode: true });
   }
 
-  // Handle quick reply buttons that need a follow-up prompt
-  if (isAdminSession) {
-    if (lastUserMsg === 'Make a website change') {
-      return res.json({ reply: 'Sure! What would you like to change? Just describe it in plain English — for example: "Change my phone number to 937-555-0123" or "Update my hours to Monday through Friday 8am to 5pm."', adminMode: true });
-    }
-    if (lastUserMsg === 'Advise me on my site') {
-      const client = clientInfo[bizKey] || {};
-      let advice = 'Let me take a look at your site.';
-      if (client.advisorChecks && client.advisorChecks.length > 0) {
-        const high = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
-        const med = client.advisorChecks.filter(function(c) { return c.impact === 'medium'; });
-        advice = 'Based on what I can see, here are the most important things to address: ';
-        if (high.length > 0) advice += high.map(function(c) { return c.issue + '. ' + c.fix; }).join(' ');
-        if (med.length > 0) advice += ' Also worth looking at: ' + med.map(function(c) { return c.issue; }).join(', ') + '.';
-      } else {
-        advice = "I haven't scanned your site yet. Open your website in Chrome with the extension active and I'll be able to give you specific advice. In the meantime, what aspect would you like advice on: Google rankings, conversions, trust signals, or something else?";
-      }
-      return res.json({ reply: advice, adminMode: true });
-    }
-  }
-
   // Check for revert command
   const revertTriggers = ['undo', 'revert', 'undo that', 'revert that', 'go back', 'undo last change', 'revert last change'];
   if (isAdminSession && revertTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
@@ -270,6 +249,27 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'revert_all' }));
       return res.json({ reply: 'All changes have been reverted.', adminMode: true });
+    }
+  }
+
+  // Handle quick reply buttons
+  if (isAdminSession) {
+    if (lastUserMsg === 'Make a website change') {
+      return res.json({ reply: 'Sure! What would you like to change? Just describe it in plain English — for example: "Change my phone number to 937-555-0123" or "Update my hours to Monday through Friday 8am to 5pm."', adminMode: true });
+    }
+    if (lastUserMsg === 'Advise me on my site') {
+      const client = clientInfo[bizKey] || {};
+      let advice = 'Let me take a look at your site.';
+      if (client.advisorChecks && client.advisorChecks.length > 0) {
+        const high = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
+        const med = client.advisorChecks.filter(function(c) { return c.impact === 'medium'; });
+        advice = 'Based on what I can see, here are the most important things to address: ';
+        if (high.length > 0) advice += high.map(function(c) { return c.issue + '. ' + c.fix; }).join(' ');
+        if (med.length > 0) advice += ' Also worth looking at: ' + med.map(function(c) { return c.issue; }).join(', ') + '.';
+      } else {
+        advice = "I haven't scanned your site yet. Open your website in Chrome with the extension active and I'll be able to give you specific advice. In the meantime, what aspect would you like advice on: Google rankings, conversions, trust signals, or something else?";
+      }
+      return res.json({ reply: advice, adminMode: true });
     }
   }
 
