@@ -171,7 +171,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/chat', rateLimit, async (req, res) => {
-  const { messages, systemPrompt, bizKey } = req.body;
+  const { messages, systemPrompt, bizKey, isAdminSession: clientAdminFlag } = req.body;
 
   // Domain validation -- check the widget is being used from a registered domain
   const origin = req.headers.origin || req.headers.referer || '';
@@ -293,11 +293,12 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
   }
 
   // Check if already in admin mode (previous messages show admin was authenticated)
-  // Check admin session -- look for bizKey in any user message OR an assistant message containing admin greeting
-  const isAdminSession = messages.length > 1 && (
-    messages.some(function(m) { return m.role === 'user' && m.content && m.content.trim().toLowerCase().replace(/\s+/g, '_') === (bizKey || '').toLowerCase(); }) ||
-    messages.some(function(m) { return m.role === 'assistant' && m.content && (m.content.includes('edit your website') || m.content.includes('admin mode') || m.content.includes('website change') || m.content.includes('improve it')); })
-  );
+  // Check admin session -- use client flag, or detect from message history
+  const adminKeywords = ['edit your website', 'make changes to your website', 'website change', 'improve it or boost', 'Google rankings', 'business setup'];
+  const isAdminSession = clientAdminFlag === true || (bizKey && clientInfo[bizKey] && messages.length >= 1 && (
+    messages.some(function(m) { return m.role === 'user' && m.content && m.content.trim().toLowerCase() === (bizKey || '').toLowerCase(); }) ||
+    messages.some(function(m) { return m.role === 'assistant' && m.content && adminKeywords.some(function(k) { return m.content.includes(k); }); })
+  ));
 
   if (isAdminSession && bizKey && clientInfo[bizKey]) {
     const client = clientInfo[bizKey];
@@ -426,7 +427,8 @@ Keep responses short and conversational. Never use markdown.${siteContext}`;
 });
 
 app.post('/generate', async (req, res) => {
-  const { clientData, systemPromptRequest: customSystemPrompt, features } = req.body;
+    try {
+const { clientData, systemPromptRequest: customSystemPrompt, features } = req.body;
   if (!clientData || typeof clientData !== 'string' || clientData.length < 50) {
     return res.status(400).json({ error: 'clientData is required' });
   }
@@ -493,6 +495,8 @@ Only output the system prompt text, nothing else. No preamble, no explanation.`;
     console.error('[Generate Error]', err.message);
     res.status(500).json({ error: 'Generation failed: ' + err.message });
   }
+
+  } catch(e) { console.error('[/generate Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 app.post('/lead', async (req, res) => {
@@ -1206,16 +1210,20 @@ setInterval(checkTriggerCampaigns, 24 * 60 * 60 * 1000);
 
 // Manual trigger endpoint for testing
 app.post('/trigger-campaigns', async (req, res) => {
-  const { secret } = req.body;
+    try {
+const { secret } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
   await checkTriggerCampaigns();
   res.json({ success: true });
+
+  } catch(e) { console.error('[/trigger-campaigns Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── INBOUND SMS WEBHOOK (Twilio) ──
 // Twilio calls this when a customer replies to a review request text
 app.post('/sms-inbound', async (req, res) => {
-  const { Body, From, To } = req.body;
+    try {
+const { Body, From, To } = req.body;
   if (!Body || !From) return res.status(200).send('<Response></Response>');
 
   const reply = Body.trim().toLowerCase();
@@ -1345,6 +1353,8 @@ app.post('/sms-inbound', async (req, res) => {
     : '<Response></Response>';
   res.setHeader('Content-Type', 'text/xml');
   res.status(200).send(twiml);
+
+  } catch(e) { console.error('[/sms-inbound Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── SMS SESSION STORE (in-memory, resets on redeploy -- acceptable for short sessions) ──
@@ -1793,7 +1803,8 @@ app.get('/handoff-reply/:sessionId', (req, res) => {
 });
 
 app.get('/send-page/:bizKey', async (req, res) => {
-  const bizKey = req.params.bizKey.toLowerCase();
+    try {
+const bizKey = req.params.bizKey.toLowerCase();
   const client = clientInfo[bizKey] || {};
   const bizName = client.bizName || bizKey.replace(/_\d+$/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   const googleLink = client.googleReviewLink || '';
@@ -1899,6 +1910,8 @@ async function sendReview() {
 </script>
 </body>
 </html>`);
+
+  } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── CLIENT HEALTH SCORE ──
@@ -2008,10 +2021,13 @@ async function sendWeeklyHealthReport() {
 }
 
 app.post('/send-health-report', async (req, res) => {
-  const { secret } = req.body;
+    try {
+const { secret } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
   await sendWeeklyHealthReport();
   res.json({ success: true });
+
+  } catch(e) { console.error('[/send-health-report Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── MONTHLY REVIEW REPORT ──
@@ -2103,7 +2119,8 @@ async function sendMonthlyReviewReport(bizKey) {
 
 // Endpoint to trigger monthly reports manually or via Railway cron
 app.post('/send-monthly-reports', async (req, res) => {
-  const { secret } = req.body;
+    try {
+const { secret } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
   const keys = Object.keys(clientInfo).filter(k => {
     const c = clientInfo[k];
@@ -2115,6 +2132,8 @@ app.post('/send-monthly-reports', async (req, res) => {
     await new Promise(r => setTimeout(r, 500));
   }
   res.json({ success: true, sent: keys.length });
+
+  } catch(e) { console.error('[/send-monthly-reports Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // Helper: extract meaningful content from raw HTML
@@ -2254,18 +2273,22 @@ app.post('/send-change-summary', async (req, res) => {
 
 // ── ADMIN MODE: REVERT LAST CHANGE ──
 app.post('/revert-edit', async (req, res) => {
-  const { bizKey, revertAll } = req.body;
+    try {
+const { bizKey, revertAll } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
   const key = bizKey.toLowerCase();
   const ws = extensionClients[key];
   if (!ws || ws.readyState !== 1) return res.status(503).json({ error: 'Extension not connected' });
   ws.send(JSON.stringify({ type: revertAll ? 'revert_all' : 'revert_last' }));
   res.json({ success: true });
+
+  } catch(e) { console.error('[/revert-edit Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── ADMIN MODE: SEO UPDATE ──
 app.post('/update-seo', async (req, res) => {
-  const { bizKey, metaTitle, metaDescription } = req.body;
+    try {
+const { bizKey, metaTitle, metaDescription } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
@@ -2287,17 +2310,22 @@ app.post('/update-seo', async (req, res) => {
     }));
   }
   res.json({ success: true });
+
+  } catch(e) { console.error('[/update-seo Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 // ── ADMIN MODE: APPLY EDIT ──
 app.post('/apply-edit', async (req, res) => {
-  const { bizKey, edit } = req.body;
+    try {
+const { bizKey, edit } = req.body;
   if (!bizKey || !edit) return res.status(400).json({ error: 'bizKey and edit required' });
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
 
   const result = await sendEditToExtension(key, edit);
   res.json(result);
+
+  } catch(e) { console.error('[/apply-edit Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
 app.use((req, res) => {
