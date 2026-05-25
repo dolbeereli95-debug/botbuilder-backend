@@ -245,17 +245,45 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
     }
     if (lastUserMsg === 'Advise me on my site') {
       const client = clientInfo[bizKey] || {};
-      let advice = 'Let me take a look at your site.';
-      if (client.advisorChecks && client.advisorChecks.length > 0) {
-        const high = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
-        const med = client.advisorChecks.filter(function(c) { return c.impact === 'medium'; });
-        advice = 'Based on what I can see, here are the most important things to address: ';
-        if (high.length > 0) advice += high.map(function(c) { return c.issue + '. ' + c.fix; }).join(' ');
-        if (med.length > 0) advice += ' Also worth looking at: ' + med.map(function(c) { return c.issue; }).join(', ') + '.';
-      } else {
-        advice = "I haven't scanned your site yet. Open your website in Chrome with the extension active and I'll be able to give you specific advice. In the meantime, what aspect would you like advice on: Google rankings, conversions, trust signals, or something else?";
+      // If we have a scan use it
+      if (client.siteScan && client.siteScan.html) {
+        const extracted = extractSiteContent(client.siteScan.html);
+        // Fall through to full admin Claude response with site context
+      } else if (client.domain || client.website || bizKey) {
+        // Try to fetch site directly from server
+        try {
+          const rawDomain = client.domain || client.website || '';
+          // For netifybuilds3467 use netifybuilds.com
+          const siteUrl = rawDomain ? 'https://' + rawDomain.replace(/^https?:\/\//, '') : null;
+          if (!siteUrl) throw new Error('No domain on file');
+          const siteUrlFinal = siteUrl;
+          const siteRes = await fetch(siteUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: AbortSignal.timeout(8000)
+          });
+          if (siteRes && siteRes.ok) {
+            const html = await siteRes.text();
+            client.siteScan = { html: html.substring(0, 50000), scannedAt: new Date().toISOString() };
+            debouncedSave('client_info.json', clientInfo);
+            console.log('[Admin] Server-side scan completed for', bizKey);
+          }
+        } catch(e) {
+          console.log('[Admin] Server-side scan failed:', e.message);
+        }
       }
-      return res.json({ reply: advice, adminMode: true });
+      // If still no scan after trying
+      if (!client.siteScan || !client.siteScan.html) {
+        if (client.advisorChecks && client.advisorChecks.length > 0) {
+          const high = client.advisorChecks.filter(function(c) { return c.impact === 'high'; });
+          const med = client.advisorChecks.filter(function(c) { return c.impact === 'medium'; });
+          let advice = 'Based on what I can see from your page, here are the most important things to address: ';
+          if (high.length > 0) advice += high.map(function(c) { return c.issue + '. ' + c.fix; }).join(' ');
+          if (med.length > 0) advice += ' Also worth looking at: ' + med.map(function(c) { return c.issue; }).join(', ') + '.';
+          return res.json({ reply: advice, adminMode: true });
+        }
+        return res.json({ reply: "What aspect of your site would you like advice on? Google rankings, conversions, trust signals, or something specific?", adminMode: true });
+      }
+      // Fall through to full Claude admin response which will use siteScan context
     }
   }
 
