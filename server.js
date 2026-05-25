@@ -193,6 +193,13 @@ app.post('/chat', rateLimit, async (req, res) => {
   const lastUserMsg = (messages[messages.length - 1] || {}).content || '';
   const trimmedMsg = lastUserMsg.trim().toLowerCase().replace(/\s+/g, '_');
 
+  // Admin session detection -- defined early so all handlers can use it
+  const adminKeywords = ['edit your website', 'make changes to your website', 'website change', 'improve it or boost', 'Google rankings', 'business setup'];
+  const isAdminSession = clientAdminFlag === true || (bizKey && clientInfo[bizKey] && messages.length >= 1 && (
+    messages.some(function(m) { return m.role === 'user' && m.content && m.content.trim().toLowerCase() === (bizKey || '').toLowerCase(); }) ||
+    messages.some(function(m) { return m.role === 'assistant' && m.content && adminKeywords.some(function(k) { return m.content.includes(k); }); })
+  ));
+
   // Check if this is an admin code entry
   if (bizKey && trimmedMsg === bizKey.toLowerCase() && clientInfo[bizKey]) {
     const client = clientInfo[bizKey];
@@ -229,27 +236,6 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
 
     const adminText = adminResponse.content[0].text;
     return res.json({ reply: adminText, adminMode: true });
-  }
-
-  // Check for revert command
-  const revertTriggers = ['undo', 'revert', 'undo that', 'revert that', 'go back', 'undo last change', 'revert last change'];
-  if (isAdminSession && revertTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
-    const ws = extensionClients[bizKey];
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'revert_last' }));
-      return res.json({ reply: 'Done, that change has been reverted.', adminMode: true });
-    } else {
-      return res.json({ reply: 'Your browser needs to be open on your website for me to revert changes. Open your site in Chrome and try again.', adminMode: true });
-    }
-  }
-
-  const revertAllTriggers = ['undo all', 'revert all', 'revert all changes', 'undo everything'];
-  if (isAdminSession && revertAllTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
-    const ws = extensionClients[bizKey];
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'revert_all' }));
-      return res.json({ reply: 'All changes have been reverted.', adminMode: true });
-    }
   }
 
   // Handle quick reply buttons
@@ -293,12 +279,28 @@ EDITOR MODE: When they ask you to change something on their website, generate a 
   }
 
   // Check if already in admin mode (previous messages show admin was authenticated)
-  // Check admin session -- use client flag, or detect from message history
-  const adminKeywords = ['edit your website', 'make changes to your website', 'website change', 'improve it or boost', 'Google rankings', 'business setup'];
-  const isAdminSession = clientAdminFlag === true || (bizKey && clientInfo[bizKey] && messages.length >= 1 && (
-    messages.some(function(m) { return m.role === 'user' && m.content && m.content.trim().toLowerCase() === (bizKey || '').toLowerCase(); }) ||
-    messages.some(function(m) { return m.role === 'assistant' && m.content && adminKeywords.some(function(k) { return m.content.includes(k); }); })
-  ));
+  // isAdminSession defined above
+  // Check for revert command
+  const revertTriggers = ['undo', 'revert', 'undo that', 'revert that', 'go back', 'undo last change', 'revert last change'];
+  if (isAdminSession && revertTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
+    const ws = extensionClients[bizKey];
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'revert_last' }));
+      return res.json({ reply: 'Done, that change has been reverted.', adminMode: true });
+    } else {
+      return res.json({ reply: 'Your browser needs to be open on your website for me to revert changes. Open your site in Chrome and try again.', adminMode: true });
+    }
+  }
+
+  const revertAllTriggers = ['undo all', 'revert all', 'revert all changes', 'undo everything'];
+  if (isAdminSession && revertAllTriggers.some(t => lastUserMsg.toLowerCase().includes(t))) {
+    const ws = extensionClients[bizKey];
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'revert_all' }));
+      return res.json({ reply: 'All changes have been reverted.', adminMode: true });
+    }
+  }
+
 
   if (isAdminSession && bizKey && clientInfo[bizKey]) {
     const client = clientInfo[bizKey];
