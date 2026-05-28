@@ -1,7 +1,15 @@
 const express = require('express');
 const { OAuth2Client } = require('google-auth-library');
 const GOOGLE_CLIENT_ID = '968822994959-js3lra786sg48d1t29l5ju5kbio6h6m1.apps.googleusercontent.com';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = 'https://botbuilder-backend-production.up.railway.app/calendar/callback';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+function getCalendarClient(tokens) {
+  const client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+  client.setCredentials(tokens);
+  return client;
+}
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nb-admin-2026';
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -442,6 +450,45 @@ Never use markdown.${siteContext}`;
       .join('');
 
     // ── MISSED LEAD DETECTION ──
+    // Check for FETCH_SLOTS trigger
+    if (reply.includes('FETCH_SLOTS') && bizKey && clientInfo[bizKey] && clientInfo[bizKey].calendarConnected) {
+      try {
+        const slotsRes = await fetch('https://botbuilder-backend-production.up.railway.app/calendar/availability/' + bizKey);
+        const slotsData = await slotsRes.json();
+        const slots = slotsData.slots || [];
+        if (slots.length === 0) {
+          return res.json({ reply: reply.replace('FETCH_SLOTS', '').trim() + " I don't see any open slots in the next 2 weeks. Please call us directly to schedule.", bizKey });
+        }
+        const slotList = slots.map(function(s, i) { return (i+1) + '. ' + s.label; }).join('\n');
+        if (!global.pendingSlots) global.pendingSlots = {};
+        global.pendingSlots[bizKey] = slots;
+        return res.json({ reply: reply.replace('FETCH_SLOTS', '').trim() + '\n\nHere are the next available times:\n' + slotList + '\n\nWhich works best for you?', bizKey, slots });
+      } catch(e) { console.error('[Slots Error]', e.message); }
+    }
+
+    // Check for BOOK_SLOT trigger
+    if (reply.includes('BOOK_SLOT|') && bizKey && clientInfo[bizKey] && clientInfo[bizKey].calendarConnected) {
+      try {
+        const bookParts = reply.split('BOOK_SLOT|')[1].split('|');
+        const slotIdx = parseInt(bookParts[0]) - 1;
+        const custName = bookParts[1] || 'Customer';
+        const custPhone = bookParts[2] || '';
+        const service = bookParts[3] || 'Appointment';
+        const slots = (global.pendingSlots && global.pendingSlots[bizKey]) || [];
+        const slot = slots[slotIdx];
+        if (!slot) throw new Error('Slot not found');
+        const bookRes2 = await fetch('https://botbuilder-backend-production.up.railway.app/calendar/book', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bizKey, slotStart: slot.start, slotEnd: slot.end, customerName: custName, customerPhone: custPhone, service })
+        });
+        const bookData = await bookRes2.json();
+        if (bookData.success) {
+          return res.json({ reply: reply.split('BOOK_SLOT|')[0].trim() + ' Your ' + service + ' is confirmed for ' + slot.label + '. See you then!', bizKey, booked: true });
+        }
+      } catch(e) { console.error('[Book Slot Error]', e.message); }
+    }
+
     // If the reply doesn't have LEAD_CAPTURED but contains what looks like
     // a phone number and name together, flag it as a potential missed capture
     if (!reply.includes('LEAD_CAPTURED|')) {
@@ -500,6 +547,7 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
   // Build feature-specific additions based on what client selected
   const featureList = (features || '').toLowerCase();
   const hasAppointment = featureList.includes('appointment');
+  const hasCalendar = !!(clientInfo[bizKey] && clientInfo[bizKey].calendarConnected);
   const hasEmergency = featureList.includes('emergency');
   const hasMultilang = featureList.includes('multilanguage') || featureList.includes('multilang');
   const hasPricing = featureList.includes('pricing');
@@ -511,7 +559,8 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
 
   const featureInstructions = [
     hasEmergency ? '- EMERGENCY ESCALATION: If the customer signals a true emergency (no heat, burst pipe, gas smell, flooding, power outage, urgent safety issue), immediately tell them to call the emergency number directly. Do not just capture the lead — push them to call now.' : '- Do not treat after-hours inquiries as emergencies unless explicitly stated. Capture leads normally.',
-    hasAppointment ? '- APPOINTMENT FLOW: When a customer asks to book or schedule, collect their preferred day, time, and reason. Do NOT confirm the appointment — tell them someone will call to confirm. Email this as a formatted appointment request.' : '',
+    hasAppointment && !hasCalendar ? '- APPOINTMENT FLOW: When a customer asks to book or schedule, collect their preferred day, time, and reason. Do NOT confirm the appointment — tell them someone will call to confirm. Email this as a formatted appointment request.' : '',
+    hasAppointment && hasCalendar ? '- CALENDAR BOOKING: When a customer asks to book or schedule, first ask what service they need. Then output this exact trigger on its own line: FETCH_SLOTS. Wait for the system to provide available slots, then present them to the customer as numbered options. When customer picks a slot, collect their name and phone number if not already provided, then output: BOOK_SLOT|[slot_index]|[customer_name]|[customer_phone]|[service]. Do not confirm manually — wait for the system confirmation.' : '',
     hasMultilang ? '- MULTILANGUAGE: Detect and respond in whatever language the customer writes in. Never force English.' : '',
     hasPricing ? '- PRICING GUIDE: When asked about cost, don\'t just say "it depends." Walk the customer through the key factors that affect price for their specific situation and give a realistic ballpark range based on the business\'s pricing data.' : '',
     hasWorkout ? '- WORKOUT SPLIT BUILDER: When someone asks about training, programs, or getting started, guide them through a short conversation: ask their main goal (lose weight / build muscle / improve endurance), experience level (beginner / intermediate / advanced), days per week available, and equipment access. Then provide a clear personalized weekly workout split — e.g. "Push/Pull/Legs" or "Full Body 3x" — described in plain sentences, no markdown. After delivering the split, naturally suggest they speak with a trainer at the gym to refine it and capture their name and number.' : '',
@@ -1292,6 +1341,96 @@ const { secret } = req.body;
 
 // ── INBOUND SMS WEBHOOK (Twilio) ──
 // Twilio calls this when a customer replies to a review request text
+// ── MISSED CALL TEXT BACK ──
+
+// Twilio hits this when a call comes in -- we respond with TwiML to ring the owner
+// and set a status callback for when the call ends
+app.post('/call-inbound', async (req, res) => {
+  try {
+    const { From, To, CallSid } = req.body;
+    console.log('[Call Inbound]', From, '->', To);
+
+    // Find which client owns this Twilio number
+    const bizKey = Object.keys(clientInfo).find(function(k) {
+      return clientInfo[k].twilioNumber === To || clientInfo[k].forwardingNumber === To;
+    });
+
+    if (bizKey && clientInfo[bizKey].ownerPhone) {
+      // Ring the owner's real phone, with status callback
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="/call-status?bizKey=${bizKey}&callerPhone=${encodeURIComponent(From)}" timeout="20" callerId="${To}">
+    <Number>${clientInfo[bizKey].ownerPhone}</Number>
+  </Dial>
+</Response>`;
+      res.setHeader('Content-Type', 'text/xml');
+      return res.status(200).send(twiml);
+    }
+
+    // No client found -- just ring through
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(200).send('<Response></Response>');
+  } catch(e) {
+    console.error('[/call-inbound Error]', e.message);
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(200).send('<Response></Response>');
+  }
+});
+
+// Twilio hits this after the call ends -- if unanswered, fire the text back
+app.post('/call-status', async (req, res) => {
+  try {
+    const { DialCallStatus, bizKey, callerPhone } = req.query;
+    const { From } = req.body;
+    const caller = callerPhone || From;
+
+    console.log('[Call Status]', bizKey, 'dial status:', DialCallStatus, 'caller:', caller);
+
+    // If call was not answered, send text back
+    if ((DialCallStatus === 'no-answer' || DialCallStatus === 'busy' || DialCallStatus === 'failed') && bizKey && caller) {
+      const client = clientInfo[bizKey];
+      if (!client) return res.status(200).send('<Response></Response>');
+
+      const bizName = client.bizName || 'us';
+      const greeting = `Hey, sorry we missed your call! This is ${bizName}. What can we help you with?`;
+
+      // Send text back to caller
+      await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          From: process.env.TWILIO_PHONE_NUMBER,
+          To: caller,
+          Body: greeting
+        }).toString()
+      });
+
+      // Start a bot SMS session for this caller
+      if (!smsSessionStore[caller]) {
+        smsSessionStore[caller] = {
+          bizKey: bizKey,
+          stage: 'bot_conversation',
+          messages: [{ role: 'assistant', content: greeting }],
+          startedAt: new Date().toISOString(),
+          source: 'missed_call'
+        };
+      }
+
+      console.log('[Missed Call Text Back] Sent to', caller, 'for', bizKey);
+    }
+
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(200).send('<Response></Response>');
+  } catch(e) {
+    console.error('[/call-status Error]', e.message);
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(200).send('<Response></Response>');
+  }
+});
+
 app.post('/sms-inbound', async (req, res) => {
     try {
 const { Body, From, To } = req.body;
@@ -1413,6 +1552,64 @@ const { Body, From, To } = req.body;
 
     responseText = 'Thank you for letting us know. We take all feedback seriously and will be in touch shortly.';
     smsSessionStore[phone] = { ...session, stage: 'complete' };
+  } else if (session && session.stage === 'bot_conversation') {
+    // Missed call text back -- run through the bot
+    const key = session.bizKey;
+    const client = clientInfo[key] || {};
+    try {
+      session.messages.push({ role: 'user', content: Body.trim() });
+      const smsSystemPrompt = `You are a helpful assistant for ${client.bizName || 'a local service business'}. A customer missed your call and you texted them back. Keep replies short (1-2 sentences max, this is SMS). Naturally collect their name and what they need help with. Once you have their name and service needed, output LEAD_CAPTURED|[name]|[phone]|[job type]|[urgency] at the very end. Never show the trigger to the customer.`;
+      const aiRes = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: smsSystemPrompt,
+        messages: session.messages.slice(-6)
+      });
+      let botReply = aiRes.content[0].text;
+
+      // Check for lead capture
+      if (botReply.includes('LEAD_CAPTURED|')) {
+        const parts = botReply.split('LEAD_CAPTURED|')[1].split('|');
+        const leadName = parts[0] || 'Unknown';
+        const leadPhone = phone;
+        const jobType = parts[2] || 'General inquiry';
+        const urgency = parts[3] || 'Normal';
+        botReply = botReply.split('LEAD_CAPTURED|')[0].trim();
+
+        // Email the owner
+        if (client.email) {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: 'onboarding@resend.dev',
+              to: client.email,
+              bcc: 'dolbeereli95@gmail.com',
+              subject: 'Missed call lead captured -- ' + leadName + ' -- ' + (client.bizName || key),
+              html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
+                <h2 style="color:#0369a1;">Missed Call Lead Captured</h2>
+                <p style="color:#374151;font-size:14px;">Your bot texted back a missed call and captured a lead.</p>
+                <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb;">
+                  <p style="font-size:14px;margin:0 0 8px;"><strong>Name:</strong> ${leadName}</p>
+                  <p style="font-size:14px;margin:0 0 8px;"><strong>Phone:</strong> ${leadPhone}</p>
+                  <p style="font-size:14px;margin:0 0 8px;"><strong>Job:</strong> ${jobType}</p>
+                  <p style="font-size:14px;margin:0;"><strong>Urgency:</strong> ${urgency}</p>
+                </div>
+                <p style="color:#0369a1;font-size:13px;font-weight:600;margin-top:16px;">Give them a call back when you get a chance.</p>
+              </div>`
+            })
+          }).catch(function(e) { console.error('[Missed Call Lead Email]', e.message); });
+        }
+        session.stage = 'complete';
+      }
+
+      session.messages.push({ role: 'assistant', content: botReply });
+      smsSessionStore[phone] = session;
+      responseText = botReply;
+    } catch(e) {
+      console.error('[SMS Bot Error]', e.message);
+      responseText = 'Thanks for your message. We\'ll be in touch soon!';
+    }
   } else {
     // No session found -- generic response
     responseText = 'Thanks for your message. For help, contact us directly.';
@@ -2237,6 +2434,209 @@ function extractSiteContent(html) {
     'PAGE TEXT SAMPLE: ' + text.substring(0, 2000)
   ].filter(Boolean).join('\n');
 }
+
+// ── GOOGLE CALENDAR OAUTH ──
+
+// Step 1: Generate OAuth URL for client to connect their calendar
+app.get('/calendar/auth/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  const client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+  const url = client.generateAuthUrl({
+    access_type: 'offline',
+    scope: ['https://www.googleapis.com/auth/calendar'],
+    state: key,
+    prompt: 'consent'
+  });
+  res.redirect(url);
+});
+
+// Step 2: Handle callback, store tokens
+app.get('/calendar/callback', async (req, res) => {
+  const { code, state: bizKey } = req.query;
+  if (!code || !bizKey) return res.status(400).send('Missing code or state');
+  try {
+    const client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+    const { tokens } = await client.getToken(code);
+    if (!clientInfo[bizKey]) return res.status(404).send('Client not found');
+    clientInfo[bizKey].calendarTokens = tokens;
+    clientInfo[bizKey].calendarConnected = true;
+    debouncedSave('client_info.json', clientInfo);
+    console.log('[Calendar] Connected for', bizKey);
+    res.send('<html><body style="font-family:sans-serif;text-align:center;padding:60px;"><h2 style="color:#16a34a;">Google Calendar Connected!</h2><p>You can close this tab and return to your portal.</p></body></html>');
+  } catch(e) {
+    console.error('[Calendar OAuth Error]', e.message);
+    res.status(500).send('Calendar connection failed: ' + e.message);
+  }
+});
+
+// Step 3: Get available slots for next 14 days
+app.get('/calendar/availability/:bizKey', async (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client2 = clientInfo[key];
+    if (!client2 || !client2.calendarTokens) return res.status(400).json({ error: 'Calendar not connected' });
+
+    const cal = getCalendarClient(client2.calendarTokens);
+
+    // Get existing events for next 14 days
+    const now = new Date();
+    const end = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime`, {
+      headers: { Authorization: 'Bearer ' + client2.calendarTokens.access_token }
+    });
+
+    if (!response.ok) {
+      // Try refreshing token
+      if (GOOGLE_CLIENT_SECRET) {
+        cal.on('tokens', function(newTokens) {
+          clientInfo[key].calendarTokens = { ...client2.calendarTokens, ...newTokens };
+          debouncedSave('client_info.json', clientInfo);
+        });
+        const newToken = await cal.refreshAccessToken();
+        clientInfo[key].calendarTokens.access_token = newToken.credentials.access_token;
+        debouncedSave('client_info.json', clientInfo);
+      }
+    }
+
+    const data = await response.json();
+    const busyTimes = (data.items || []).map(function(e) {
+      return { start: e.start.dateTime || e.start.date, end: e.end.dateTime || e.end.date };
+    });
+
+    // Generate available slots based on owner settings
+    const settings = client2.calendarSettings || { startHour: 8, endHour: 17, duration: 60, buffer: 30, workDays: [1,2,3,4,5] };
+    const slots = [];
+    const slotDuration = (settings.duration + settings.buffer) * 60 * 1000;
+
+    for (let d = 0; d < 14 && slots.length < 6; d++) {
+      const day = new Date(now);
+      day.setDate(day.getDate() + d + 1);
+      if (!settings.workDays.includes(day.getDay())) continue;
+
+      for (let h = settings.startHour; h < settings.endHour; h++) {
+        const slotStart = new Date(day);
+        slotStart.setHours(h, 0, 0, 0);
+        const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
+
+        // Check if slot conflicts with any busy time
+        const conflict = busyTimes.some(function(b) {
+          const bStart = new Date(b.start);
+          const bEnd = new Date(b.end);
+          return slotStart < bEnd && slotEnd > bStart;
+        });
+
+        if (!conflict && slotStart > now) {
+          slots.push({
+            start: slotStart.toISOString(),
+            end: slotEnd.toISOString(),
+            label: slotStart.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) + ' at ' + slotStart.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+          });
+          if (slots.length >= 3) break;
+        }
+      }
+    }
+
+    res.json({ slots, connected: true });
+  } catch(e) {
+    console.error('[Calendar Availability Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Step 4: Book an appointment
+app.post('/calendar/book', async (req, res) => {
+  try {
+    const { bizKey, slotStart, slotEnd, customerName, customerPhone, customerEmail, service, notes } = req.body;
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client2 = clientInfo[key];
+    if (!client2 || !client2.calendarTokens) return res.status(400).json({ error: 'Calendar not connected' });
+
+    const event = {
+      summary: (service || 'Appointment') + ' — ' + (customerName || 'Customer'),
+      description: [
+        'Customer: ' + (customerName || 'Not provided'),
+        'Phone: ' + (customerPhone || 'Not provided'),
+        'Email: ' + (customerEmail || 'Not provided'),
+        'Service: ' + (service || 'Not specified'),
+        'Notes: ' + (notes || 'None'),
+        '',
+        'Booked via Netify Builds chat assistant'
+      ].join('\n'),
+      start: { dateTime: slotStart, timeZone: 'America/New_York' },
+    };
+
+    const bookRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + client2.calendarTokens.access_token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(event)
+    });
+
+    if (!bookRes.ok) {
+      const err = await bookRes.json();
+      throw new Error(err.error.message || 'Booking failed');
+    }
+
+    const booked = await bookRes.json();
+
+    // Send confirmation email to owner
+    if (client2.email) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@resend.dev',
+          to: client2.email,
+          bcc: 'dolbeereli95@gmail.com',
+          subject: 'New appointment booked — ' + (customerName || 'Customer'),
+          html: '<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;"><h2 style="color:#0369a1;">New Appointment Booked</h2><p style="color:#374151;">A customer booked an appointment through your chat bot.</p><div style="background:white;border-radius:8px;padding:16px;border:1px solid #e5e7eb;font-size:14px;color:#374151;"><p><strong>Name:</strong> ' + (customerName || 'Not provided') + '</p><p><strong>Phone:</strong> ' + (customerPhone || 'Not provided') + '</p><p><strong>Service:</strong> ' + (service || 'Not specified') + '</p><p><strong>Time:</strong> ' + new Date(slotStart).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + ' at ' + new Date(slotStart).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</p></div><p style="color:#0369a1;font-size:13px;font-weight:600;margin-top:16px;">This appointment has been added to your Google Calendar.</p></div>'
+        })
+      }).catch(function(e) { console.error('[Calendar Email Error]', e.message); });
+    }
+
+    res.json({ success: true, eventId: booked.id });
+  } catch(e) {
+    console.error('[Calendar Book Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Calendar settings update
+app.post('/calendar/settings', (req, res) => {
+  const { bizKey, startHour, endHour, duration, buffer, workDays } = req.body;
+  const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  clientInfo[key].calendarSettings = { startHour: startHour || 8, endHour: endHour || 17, duration: duration || 60, buffer: buffer || 30, workDays: workDays || [1,2,3,4,5] };
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true });
+});
+
+// Disconnect calendar
+app.post('/calendar/disconnect', (req, res) => {
+  const { bizKey } = req.body;
+  const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  delete clientInfo[key].calendarTokens;
+  clientInfo[key].calendarConnected = false;
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true });
+});
+
+// ── MISSED CALL SETTINGS ──
+app.post('/missed-call-settings', (req, res) => {
+  const { bizKey, ownerPhone, twilioNumber, secret } = req.body;
+  if (!secret || secret !== process.env.ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  if (ownerPhone) clientInfo[key].ownerPhone = ownerPhone;
+  if (twilioNumber) clientInfo[key].twilioNumber = twilioNumber;
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true });
+});
 
 // ── ADMIN MODE: ANALYZE SITE ──
 app.post('/analyze-site', async (req, res) => {
