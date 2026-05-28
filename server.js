@@ -793,6 +793,45 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   }, 30 * 24 * 60 * 60 * 1000); // 30 days
 }
 
+function buildSystemPrompt(data) {
+  const { bizName, botName, services, hours, area, faqs, differentiators,
+    licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry } = data;
+  const name = botName || (bizName + ' Assistant');
+  const toneDesc = tone === 'professional' ? 'Professional and polished' :
+    tone === 'casual' ? 'Casual and friendly' : 'Friendly and conversational';
+
+  return `You are ${name}, the AI chat assistant for ${bizName}. You help answer questions, capture leads, and provide excellent customer service 24/7.
+
+Keep every response to 2-3 sentences maximum. Be ${toneDesc.toLowerCase()}, like a knowledgeable friend, not a salesperson. Never use markdown formatting, bullet points, bold text, or emojis. Plain conversational sentences only.
+
+ABOUT THE BUSINESS:
+Business Name: ${bizName}
+${industry ? 'Industry: ' + industry : ''}
+${services ? 'Services: ' + services : ''}
+${hours ? 'Business Hours: ' + hours : ''}
+${area ? 'Service Area: ' + area : ''}
+${differentiators ? 'What Sets Us Apart: ' + differentiators : ''}
+${licensing ? 'Licensing/Insurance: ' + licensing : ''}
+${emergency ? 'Emergency Services: ' + emergency : ''}
+${seasonal ? 'Seasonal Notes: ' + seasonal : ''}
+${faqs ? 'FAQs: ' + faqs : ''}
+
+LEAD COLLECTION:
+${leadCapture === 'name_only' ? 'Collect the customer name only. Then let them know someone will follow up.' :
+  leadCapture === 'name_email' ? 'Collect the customer name and email address through natural conversation.' :
+  'Naturally collect the customer name then phone number through conversation. Never ask again once collected.'}
+
+Once you have the required contact info, output this trigger exactly at the very end of your response on its own line:
+LEAD_CAPTURED|[name]|[phone_or_email]|[job type or Not specified]|[urgency or Not specified]
+
+Never show this trigger to the customer. Never mention it.
+
+PERSONALITY: Vary your responses naturally. Sound like a real person, not a script.
+LANGUAGE: Respond in whatever language the customer writes in.
+HONESTY: If you don't know something, say so and offer to have someone follow up.
+NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURED trigger.`;
+}
+
 app.post('/signup', async (req, res) => {
   const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture } = req.body;
   if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
@@ -874,14 +913,18 @@ app.post('/signup', async (req, res) => {
             <pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">${botBuilderData}</pre>
           </div>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">
-            <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Your next steps</p>
+            <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Widget Install Code — send this to client</p>
+            <p style="color:#374151;font-size:13px;margin:0 0 10px;">Paste this before the closing &lt;/body&gt; tag on their website:</p>
+            <pre style="background:#0f172a;color:#4ade80;font-size:11px;padding:14px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0 0 14px;font-family:monospace;">&lt;!-- Netify Builds Chat Widget --&gt;
+&lt;script&gt;
+window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSON.stringify(botName || bizName + ' Assistant')},accentColor:'${botColor || '#0A2540'}',backend:'https://botbuilder-backend-production.up.railway.app',leadEmail:${JSON.stringify(email)}};
+&lt;/script&gt;
+&lt;script src="https://netifybuilds.com/widget-loader.js" async&gt;&lt;/script&gt;</pre>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
-              ${pkg !== 'review' ? '<li>Open builder-FINAL.html, paste the BotBuilder data above, and generate their bot</li>' : ''}
-              ${pkg !== 'review' ? '<li>Email them the widget code + install instructions + their portal access code</li>' : ''}
-              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Set up their Review Filter page in the builder and deploy to Cloudflare Pages</li>' : ''}
-              ${pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign' ? '<li>Note their campaign list size and format — reach out to get their customer list</li>' : ''}
-              <li>Register their client portal: run the register-client curl command with their bizKey</li>
-              <li>Their bot stays inactive until they hit Activate in the portal — no subscription starts until then</li>
+              <li>Send the install code above to the client or their web developer</li>
+              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Set up their Review Filter page</li>' : ''}
+              ${pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign' ? '<li>Get their customer list for campaigns</li>' : ''}
+              <li>Bot stays inactive until they hit Activate in the portal — no subscription starts until then</li>
             </ol>
           </div>
           <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
@@ -897,21 +940,36 @@ app.post('/signup', async (req, res) => {
     if (website) {
       try { clientDomain = new URL(website.startsWith('http') ? website : 'https://' + website).hostname; } catch(e) {}
     }
-    clientInfo[bizKey] = {
-      bizName: bizName,
-      plan: pkg || 'faq',
-      email: email,
-      phone: phone || '',
-      industry: industry || '',
-      activated: false,
-      registeredAt: new Date().toISOString(),
-      googleReviewLink: googleReviewLink || '',
-      campaignListSize: campaignListSize || '',
-      campaignListFormat: campaignListFormat || '',
-      domain: clientDomain
-    };
-    debouncedSave('client_info.json', clientInfo);
+     clientInfo[bizKey] = {
+       bizName: bizName,
+       plan: pkg || 'faq',
+       email: email,
+       phone: phone || '',
+       industry: industry || '',
+       activated: false,
+       registeredAt: new Date().toISOString(),
+       googleReviewLink: googleReviewLink || '',
+       campaignListSize: campaignListSize || '',
+       campaignListFormat: campaignListFormat || '',
+       domain: clientDomain,
+       botName: botName || (bizName + ' Assistant'),
+       botColor: botColor || '#0A2540',
+       services: services || '',
+       hours: hours || '',
+       area: area || '',
+       faqs: faqs || '',
+       differentiators: differentiators || '',
+       tone: tone || 'friendly',
+       leadCapture: leadCapture || 'name_phone'
+     };
 
+
+    // Build and store system prompt automatically
+    clientInfo[bizKey].systemPrompt = buildSystemPrompt({
+      bizName, botName: clientInfo[bizKey].botName, services, hours, area, faqs,
+      differentiators, licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry
+    });
+    debouncedSave('client_info.json', clientInfo);
     // Schedule welcome sequence follow-ups — delayed to start from activation not signup
     // Day 3 and Day 7 emails are intentionally kept as-is since they relate to setup not subscription
     scheduleWelcomeSequence(email, ownerName, bizName, pkg, website);
@@ -2434,6 +2492,79 @@ function extractSiteContent(html) {
     'PAGE TEXT SAMPLE: ' + text.substring(0, 2000)
   ].filter(Boolean).join('\n');
 }
+
+// ── WIDGET SCRIPT GENERATOR ──
+app.get('/widget-script/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key];
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const bizName = client.bizName || 'Your Business';
+  const botName = client.botName || (bizName + ' Assistant');
+  const accentColor = client.botColor || '#0A2540';
+  const systemPrompt = client.systemPrompt || '';
+  const greeting = client.greeting || '';
+
+  const script = `<!-- Netify Builds Chat Widget -->
+<script>
+(function() {
+  var BIZ_KEY      = '${key}';
+  var BIZ_NAME     = '${bizName.replace(/'/g, "\'")}';
+  var BOT_NAME     = '${botName.replace(/'/g, "\'")}';
+  var ACCENT_COLOR = '${accentColor}';
+  var BACKEND_URL  = 'https://botbuilder-backend-production.up.railway.app';
+  var SYSTEM_PROMPT = ${JSON.stringify(systemPrompt)};
+  var GREETING = ${JSON.stringify(greeting)};
+  var HOURS = null;
+  var LEAD_EMAIL = '${(client.email || '').replace(/'/g, "\'")}';
+  var AUTO_OPEN_DELAY = null;
+
+  var s = document.createElement('script');
+  s.src = 'https://netifybuilds.com/widget.js';
+  s.setAttribute('data-bizkey', BIZ_KEY);
+  s.setAttribute('data-bizname', BIZ_NAME);
+  s.setAttribute('data-botname', BOT_NAME);
+  s.setAttribute('data-color', ACCENT_COLOR);
+  s.setAttribute('data-backend', BACKEND_URL);
+  s.setAttribute('data-prompt', encodeURIComponent(SYSTEM_PROMPT));
+  s.setAttribute('data-greeting', encodeURIComponent(GREETING));
+  s.setAttribute('data-email', LEAD_EMAIL);
+  document.head.appendChild(s);
+})();
+</script>
+<!-- End Netify Builds Widget -->`;
+
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(script);
+});
+
+// Generate and return the full inline widget script for a client
+app.get('/widget-inline/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key];
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const bizNameSafe = (client.bizName || 'Your Business').replace(/[`'\\]/g, ' ');
+  const botNameSafe = (client.botName || bizNameSafe + ' Assistant').replace(/[`'\\]/g, ' ');
+  const accentColor = client.botColor || '#0A2540';
+  const bizInitial = bizName.charAt(0).toUpperCase();
+
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(`<!-- Netify Builds Chat Widget for ${client.bizName} -->
+<script>
+window.__nb = {
+  bizKey: '${key}',
+  bizName: ${JSON.stringify(client.bizName || 'Your Business')},
+  botName: ${JSON.stringify(client.botName || (client.bizName || 'Your Business') + ' Assistant')},
+  accentColor: '${accentColor}',
+  backend: 'https://botbuilder-backend-production.up.railway.app',
+  leadEmail: ${JSON.stringify(client.email || '')},
+  systemPrompt: ${JSON.stringify(client.systemPrompt || '')}
+};
+</script>
+<script src="https://netifybuilds.com/widget-loader.js" async></script>
+<!-- End Netify Builds Widget -->`);
+});
 
 // ── GOOGLE CALENDAR OAUTH ──
 
