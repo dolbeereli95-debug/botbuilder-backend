@@ -547,7 +547,7 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
   // Build feature-specific additions based on what client selected
   const featureList = (features || '').toLowerCase();
   const hasAppointment = featureList.includes('appointment');
-  const hasCalendar = !!(clientInfo[bizKey] && clientInfo[bizKey].calendarConnected);
+  const hasCalendar = featureList.includes('calendar') || featureList.includes('google calendar');
   const hasEmergency = featureList.includes('emergency');
   const hasMultilang = featureList.includes('multilanguage') || featureList.includes('multilang');
   const hasPricing = featureList.includes('pricing');
@@ -911,7 +911,7 @@ Never show this trigger to the customer. Never mention it.
 PERSONALITY: Vary your responses naturally. Sound like a real person, not a script.
 LANGUAGE: Respond in whatever language the customer writes in.
 HONESTY: If you don't know something, say so and offer to have someone follow up.
-NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURED trigger. Say someone is coming or on their way before collecting contact info — always get their name and number first.`;
+NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURED trigger. Say someone is coming or on their way before collecting name and number. Ask what the call is about after already collecting contact info — just confirm what you got and offer to help. Once you have name and phone, confirm back naturally like 'Got it, [name] at [number] — someone will be in touch shortly. Anything else I can help with?' then answer any questions they have.`;
 }
 
 app.post('/signup', async (req, res) => {
@@ -1004,7 +1004,7 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
 &lt;script src="https://netifybuilds.com/widget-loader.js" async&gt;&lt;/script&gt;</pre>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
               <li>Send the install code above to the client or their web developer</li>
-              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Set up their Review Filter page</li>' : ''}
+              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Review filter is ready automatically — just make sure their Google review link is saved in their client record</li>' : ''}
               ${pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign' ? '<li>Get their customer list for campaigns</li>' : ''}
               <li>Bot stays inactive until they hit Activate in the portal — no subscription starts until then</li>
             </ol>
@@ -2582,6 +2582,52 @@ function extractSiteContent(html) {
   ].filter(Boolean).join('\n');
 }
 
+// ── ADMIN ENDPOINTS ──
+
+// Admin auth middleware
+function requireAdmin(req, res, next) {
+  const secret = req.headers['x-admin-secret'] || req.query.secret;
+  if (!secret || secret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
+// Get all clients
+app.get('/admin/clients', requireAdmin, (req, res) => {
+  res.json(clientInfo);
+});
+
+// Update a client record
+app.post('/admin/update-client/:bizKey', requireAdmin, (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  const allowed = ['bizName','email','phone','plan','domain','googleReviewLink','emergency','botName','botColor','services','hours','area','faqs','differentiators','tone','leadCapture','systemPrompt'];
+  allowed.forEach(function(field) {
+    if (req.body[field] !== undefined) clientInfo[key][field] = req.body[field];
+  });
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true });
+});
+
+// Regenerate system prompt for a client
+app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  const data = { ...clientInfo[key], ...req.body };
+  const prompt = buildSystemPrompt({
+    bizName: data.bizName, botName: data.botName, services: data.services,
+    hours: data.hours, area: data.area, faqs: data.faqs,
+    differentiators: data.differentiators, licensing: data.licensing,
+    emergency: data.emergency, seasonal: data.seasonal,
+    googleReviewLink: data.googleReviewLink, tone: data.tone,
+    leadCapture: data.leadCapture, industry: data.industry
+  });
+  clientInfo[key].systemPrompt = prompt;
+  debouncedSave('client_info.json', clientInfo);
+  res.json({ success: true, prompt });
+});
+
 // ── WIDGET SCRIPT GENERATOR ──
 app.get('/widget-script/:bizKey', (req, res) => {
   const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
@@ -2730,24 +2776,30 @@ app.get('/calendar/availability/:bizKey', async (req, res) => {
     const slots = [];
     const slotDuration = (settings.duration + settings.buffer) * 60 * 1000;
 
-    for (let d = 0; d < 14 && slots.length < 6; d++) {
+    const stepMinutes = (settings.duration || 60) + (settings.buffer || 30);
+
+    for (let d = 0; d < 14 && slots.length < 3; d++) {
       const day = new Date(now);
       day.setDate(day.getDate() + d + 1);
       if (!settings.workDays.includes(day.getDay())) continue;
 
-      for (let h = settings.startHour; h < settings.endHour; h++) {
+      // Step through day in duration+buffer increments
+      for (let mins = (settings.startHour || 8) * 60; mins + (settings.duration || 60) <= (settings.endHour || 17) * 60; mins += stepMinutes) {
         const slotStart = new Date(day);
-        slotStart.setHours(h, 0, 0, 0);
-        const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
+        slotStart.setHours(0, mins, 0, 0);
+        const slotEnd = new Date(slotStart.getTime() + (settings.duration || 60) * 60 * 1000);
 
-        // Check if slot conflicts with any busy time
+        // Skip if in the past
+        if (slotStart <= now) continue;
+
+        // Check conflict with existing calendar events
         const conflict = busyTimes.some(function(b) {
           const bStart = new Date(b.start);
           const bEnd = new Date(b.end);
           return slotStart < bEnd && slotEnd > bStart;
         });
 
-        if (!conflict && slotStart > now) {
+        if (!conflict) {
           slots.push({
             start: slotStart.toISOString(),
             end: slotEnd.toISOString(),
