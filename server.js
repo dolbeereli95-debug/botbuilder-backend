@@ -558,7 +558,7 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
   const hasCleaning = featureList.includes('cleaning') || featureList.includes('quote estimator');
 
   const featureInstructions = [
-    hasEmergency ? '- EMERGENCY ESCALATION: If the customer signals a true emergency (no heat, burst pipe, gas smell, flooding, power outage, urgent safety issue), immediately tell them to call the emergency number directly. Do not just capture the lead — push them to call now.' : '- Do not treat after-hours inquiries as emergencies unless explicitly stated. Capture leads normally.',
+    hasEmergency ? ('- EMERGENCY ESCALATION: If the customer signals a true emergency (no heat, burst pipe, gas smell, flooding, power outage, urgent safety issue), immediately tell them to call the emergency number directly: ' + (clientInfo[bizKey] && clientInfo[bizKey].emergency ? clientInfo[bizKey].emergency : 'the emergency line') + '. Do not just capture the lead — push them to call now. Still capture their name and number after directing them.') : '- Do not treat after-hours inquiries as emergencies unless explicitly stated. Capture leads normally.',
     hasAppointment && !hasCalendar ? '- APPOINTMENT FLOW: When a customer asks to book or schedule, collect their preferred day, time, and reason. Do NOT confirm the appointment — tell them someone will call to confirm. Email this as a formatted appointment request.' : '',
     hasAppointment && hasCalendar ? '- CALENDAR BOOKING: When a customer asks to book or schedule, first ask what service they need. Then output this exact trigger on its own line: FETCH_SLOTS. Wait for the system to provide available slots, then present them to the customer as numbered options. When customer picks a slot, collect their name and phone number if not already provided, then output: BOOK_SLOT|[slot_index]|[customer_name]|[customer_phone]|[service]. Do not confirm manually — wait for the system confirmation.' : '',
     hasMultilang ? '- MULTILANGUAGE: Detect and respond in whatever language the customer writes in. Never force English.' : '',
@@ -793,6 +793,88 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   }, 30 * 24 * 60 * 60 * 1000); // 30 days
 }
 
+function buildQuickReplies(data) {
+  const { plan, features, industry, calendarConnected } = data;
+
+  // Emergency tab quick replies - always industry specific
+  var emergencyReplies = ['No heat or AC', 'Water leak', 'Power issue', 'Other emergency'];
+  if (industry) {
+    var ind = industry.toLowerCase();
+    if (ind.includes('hvac') || ind.includes('heating') || ind.includes('cooling') || ind.includes('air')) {
+      emergencyReplies = ['AC stopped working', 'No heat', 'Strange smell or noise', 'System leaking'];
+    } else if (ind.includes('plumb')) {
+      emergencyReplies = ['Pipe burst or leak', 'No hot water', 'Drain clogged', 'Toilet overflowing'];
+    } else if (ind.includes('electric')) {
+      emergencyReplies = ['Power outage', 'Sparks or burning smell', 'Breaker keeps tripping', 'No power to room'];
+    } else if (ind.includes('roof')) {
+      emergencyReplies = ['Active roof leak', 'Storm damage', 'Tree fell on roof', 'Ceiling is wet'];
+    } else if (ind.includes('pest')) {
+      emergencyReplies = ['Bees or wasps inside', 'Rodents in home', 'Bed bugs', 'Termite damage'];
+    }
+  }
+  const hasAppointment = calendarConnected || (features && (features.includes('appointment') || features.includes('calendar')));
+  const hasReview = plan && (plan.includes('review') || plan === 'all' || plan === 'bundle');
+
+  // Base replies every service business bot gets
+  var replies = ['Get a quote', 'Hours & availability', 'Service area'];
+
+  // Add appointment booking if they have it
+  if (hasAppointment) {
+    replies = ['Book an appointment', 'Get a quote', 'Hours & availability', 'Service area'];
+  }
+
+  // Industry-specific adjustments
+  if (industry) {
+    var ind = industry.toLowerCase();
+    if (ind.includes('hvac') || ind.includes('heating') || ind.includes('cooling') || ind.includes('air')) {
+      replies = hasAppointment
+        ? ['Book an appointment', 'AC not cooling', 'Get a quote', 'Service area']
+        : ['AC not cooling', 'Get a quote', 'Hours & availability', 'Service area'];
+    } else if (ind.includes('plumb')) {
+      replies = hasAppointment
+        ? ['Book an appointment', 'Emergency leak', 'Get a quote', 'Service area']
+        : ['Emergency leak', 'Get a quote', 'Hours & availability', 'Service area'];
+    } else if (ind.includes('roof')) {
+      replies = hasAppointment
+        ? ['Book an appointment', 'Free inspection', 'Get a quote', 'Service area']
+        : ['Free inspection', 'Get a quote', 'Storm damage help', 'Service area'];
+    } else if (ind.includes('electric')) {
+      replies = hasAppointment
+        ? ['Book an appointment', 'Get a quote', 'Emergency service', 'Service area']
+        : ['Get a quote', 'Emergency service', 'Hours & availability', 'Service area'];
+    } else if (ind.includes('clean')) {
+      replies = hasAppointment
+        ? ['Book a cleaning', 'Get a quote', 'Service area', 'Hours & availability']
+        : ['Get a quote', 'Service area', 'Hours & availability', 'What do you clean?'];
+    } else if (ind.includes('lawn') || ind.includes('landscape')) {
+      replies = hasAppointment
+        ? ['Book a visit', 'Get a quote', 'Service area', 'What services?']
+        : ['Get a quote', 'Service area', 'What services?', 'Hours & availability'];
+    } else if (ind.includes('dental') || ind.includes('dentist')) {
+      replies = hasAppointment
+        ? ['Book an appointment', 'New patient info', 'Insurance accepted', 'Hours & availability']
+        : ['New patient info', 'Insurance accepted', 'Hours & availability', 'Services offered'];
+    } else if (ind.includes('auto') || ind.includes('car') || ind.includes('mechanic')) {
+      replies = hasAppointment
+        ? ['Book a service', 'Get a quote', 'Hours & availability', 'Service area']
+        : ['Get a quote', 'Hours & availability', 'What services?', 'Service area'];
+    } else if (ind.includes('pest')) {
+      replies = hasAppointment
+        ? ['Book an inspection', 'Get a quote', 'Service area', 'Emergency service']
+        : ['Get a quote', 'Service area', 'What pests?', 'Emergency service'];
+    } else if (ind.includes('moving') || ind.includes('move')) {
+      replies = hasAppointment
+        ? ['Get a quote', 'Book a date', 'Service area', 'What do you move?']
+        : ['Get a quote', 'Service area', 'What do you move?', 'Hours & availability'];
+    }
+  }
+
+  return {
+    question: replies.slice(0, 4),
+    emergency: emergencyReplies.slice(0, 4)
+  };
+}
+
 function buildSystemPrompt(data) {
   const { bizName, botName, services, hours, area, faqs, differentiators,
     licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry } = data;
@@ -960,11 +1042,18 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
        faqs: faqs || '',
        differentiators: differentiators || '',
        tone: tone || 'friendly',
-       leadCapture: leadCapture || 'name_phone'
+       leadCapture: leadCapture || 'name_phone',
+       emergency: emergency || ''
      };
 
 
     // Build and store system prompt automatically
+    const qr = buildQuickReplies({
+      plan: pkg, features, industry,
+      calendarConnected: false
+    });
+    clientInfo[bizKey].quickReplies = qr.question || qr;
+    clientInfo[bizKey].emergencyReplies = qr.emergency || [];
     clientInfo[bizKey].systemPrompt = buildSystemPrompt({
       bizName, botName: clientInfo[bizKey].botName, services, hours, area, faqs,
       differentiators, licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry
