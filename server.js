@@ -724,6 +724,7 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   const firstName = (ownerName || 'there').split(' ')[0];
   const isBot = pkg !== 'review' && pkg !== 'review_campaign';
   const isReview = pkg === 'review' || pkg === 'bundle' || pkg === 'review_campaign' || pkg === 'all' || pkg === 'bot_campaign';
+  const isCampaign = pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign';
 
   // Email 2 — Day 3: Check in on install progress
   setTimeout(async function() {
@@ -744,7 +745,7 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   setTimeout(async function() {
     await sendEmail(
       email,
-      'Still here if you need anything — ' + bizName + ',',
+      'Still here if you need anything — ' + bizName,
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
         <h2 style="color:#0A2540;font-size:1.3rem;margin-bottom:8px;">Hey ${firstName} — still here</h2>
         <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">Just wanted to follow up one more time. Once your bot is installed and you're ready to go live, log into your client portal at <a href="https://netifybuilds.com/portal" style="color:#2563eb;">netifybuilds.com/portal</a> and hit Activate — that's when your subscription starts.</p>
@@ -991,7 +992,8 @@ app.post('/signup', async (req, res) => {
             <p style="margin:0;background:#f0fdf4;border-radius:6px;padding:8px 12px;"><strong>Portal Access Code:</strong> <span style="font-family:monospace;font-weight:700;color:#15803d;">${bizKey}</span> — send this to the client so they can log into their portal</p>
           </div>
           <div style="background:#0A2540;border-radius:10px;padding:20px;">
-            <p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">BotBuilder Data — paste directly into builder tool</p>
+            <p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">Client Data — view and edit in admin tool</p>
+            <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:0 0 12px;">Manage this client at: <a href="https://netifybuilds.com/admin" style="color:#93C5FD;">netifybuilds.com/admin</a></p>
             <pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">${botBuilderData}</pre>
           </div>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">
