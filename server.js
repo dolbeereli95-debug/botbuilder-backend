@@ -829,7 +829,7 @@ Never show this trigger to the customer. Never mention it.
 PERSONALITY: Vary your responses naturally. Sound like a real person, not a script.
 LANGUAGE: Respond in whatever language the customer writes in.
 HONESTY: If you don't know something, say so and offer to have someone follow up.
-NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURED trigger.`;
+NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURED trigger. Say someone is coming or on their way before collecting contact info — always get their name and number first.`;
 }
 
 app.post('/signup', async (req, res) => {
