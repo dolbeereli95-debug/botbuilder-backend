@@ -2702,6 +2702,12 @@ app.post('/admin/generate-demo', requireAdmin, (req, res) => {
   const qrsJson = JSON.stringify(qrs || ['Get a quote', 'Hours & availability', 'Service area']);
   const ergsJson = JSON.stringify(emergs || ['Emergency service', 'Get a quote', 'Service area']);
 
+  // Only show emergency button for relevant industries
+  const emergencyInds = ['hvac','heating','cooling','air','plumb','electric','roof','pest','locksmith','auto','mechanic','flood','restoration','sewer','drain','gas','furnace'];
+  const indLower = (req.body.industry || '').toLowerCase();
+  const showEmergency = emergencyInds.some(function(i) { return indLower.includes(i); });
+  const emergencyBtnHtml = showEmergency ? `<button class="ab" onclick="showChat('emergency')"><div class="bi be"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div><div class="bt">Emergency service</div><div class="bs">Urgent issue? We respond fast</div></div><div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></button>` : '';
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2818,11 +2824,7 @@ body{font-family:'DM Sans',sans-serif;background:linear-gradient(135deg,#1a1a2e 
         <div><div class="bt">Request a callback</div><div class="bs">Leave your number, we'll call back</div></div>
         <div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
       </button>
-      <button class="ab" onclick="showChat('emergency')">
-        <div class="bi be"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-        <div><div class="bt">Emergency service</div><div class="bs">Urgent issue? We respond fast</div></div>
-        <div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </button>
+      ${emergencyBtnHtml}
     </div>
     <div id="hf">Powered by <a href="https://netifybuilds.com" target="_blank" style="color:#94a3b8;">Netify Builds</a></div>
   </div>
