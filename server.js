@@ -2682,7 +2682,7 @@ app.get('/admin/clients', requireAdmin, (req, res) => {
 app.post('/admin/update-client/:bizKey', requireAdmin, (req, res) => {
   const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
-  const allowed = ['bizName','email','phone','plan','domain','googleReviewLink','emergency','botName','botColor','services','hours','area','faqs','differentiators','tone','leadCapture','systemPrompt'];
+  const allowed = ['bizName','email','phone','plan','domain','googleReviewLink','emergency','botName','botColor','services','hours','area','faqs','differentiators','tone','leadCapture','systemPrompt','activated','features'];
   allowed.forEach(function(field) {
     if (req.body[field] !== undefined) clientInfo[key][field] = req.body[field];
   });
