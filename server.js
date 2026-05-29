@@ -923,7 +923,7 @@ function buildQuickReplies(data) {
 
 function buildSystemPrompt(data) {
   const { bizName, botName, services, hours, area, faqs, differentiators,
-    licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry } = data;
+    licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry, features } = data;
   const name = botName || (bizName + ' Assistant');
   const toneDesc = tone === 'professional' ? 'Professional and polished' :
     tone === 'casual' ? 'Casual and friendly' : 'Friendly and conversational';
@@ -1105,7 +1105,8 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
        differentiators: differentiators || '',
        tone: tone || 'friendly',
        leadCapture: leadCapture || 'name_phone',
-       emergency: emergency || ''
+       emergency: emergency || '',
+       features: features || ''
      };
 
 
@@ -1118,7 +1119,8 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
     clientInfo[bizKey].emergencyReplies = qr.emergency || [];
     clientInfo[bizKey].systemPrompt = buildSystemPrompt({
       bizName, botName: clientInfo[bizKey].botName, services, hours, area, faqs,
-      differentiators, licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry
+      differentiators, licensing, emergency, seasonal, googleReviewLink, tone, leadCapture, industry,
+      features: (features || '').toLowerCase()
     });
     debouncedSave('client_info.json', clientInfo);
     // Schedule welcome sequence follow-ups — delayed to start from activation not signup
@@ -2683,7 +2685,8 @@ app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
     differentiators: data.differentiators, licensing: data.licensing,
     emergency: data.emergency, seasonal: data.seasonal,
     googleReviewLink: data.googleReviewLink, tone: data.tone,
-    leadCapture: data.leadCapture, industry: data.industry
+    leadCapture: data.leadCapture, industry: data.industry,
+    features: (data.features || clientInfo[key].features || '').toLowerCase()
   });
   clientInfo[key].systemPrompt = prompt;
   debouncedSave('client_info.json', clientInfo);
