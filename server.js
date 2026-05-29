@@ -728,15 +728,59 @@ async function sendEmail(to, subject, html) {
   } catch(e) { console.error('[Email error]', e.message); }
 }
 
+// ── PERSISTENT EMAIL SCHEDULER ──
+// Stores scheduled emails in data file so they survive redeploys
+
+var scheduledEmails = loadData('scheduled_emails.json') || [];
+
+function saveScheduledEmails() {
+  debouncedSave('scheduled_emails.json', scheduledEmails);
+}
+
+// Check every 5 minutes for emails that are due
+setInterval(async function() {
+  var now = Date.now();
+  var pending = scheduledEmails.filter(function(e) { return e.sendAt <= now && !e.sent; });
+  for (var i = 0; i < pending.length; i++) {
+    var e = pending[i];
+    try {
+      await sendEmail(e.to, e.subject, e.html);
+      e.sent = true;
+      e.sentAt = new Date().toISOString();
+      console.log('[Scheduler] Sent:', e.subject, 'to', e.to);
+    } catch(err) {
+      console.error('[Scheduler] Failed to send:', e.subject, err.message);
+    }
+  }
+  if (pending.length > 0) {
+    // Clean up old sent emails older than 60 days
+    scheduledEmails = scheduledEmails.filter(function(e) {
+      return !e.sent || (Date.now() - new Date(e.sentAt).getTime() < 60 * 24 * 60 * 60 * 1000);
+    });
+    saveScheduledEmails();
+  }
+}, 5 * 60 * 1000);
+
+function queueEmail(to, subject, html, delayMs) {
+  scheduledEmails.push({
+    to: to,
+    subject: subject,
+    html: html,
+    sendAt: Date.now() + delayMs,
+    sent: false,
+    queuedAt: new Date().toISOString()
+  });
+  saveScheduledEmails();
+}
+
 function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
   const firstName = (ownerName || 'there').split(' ')[0];
   const isBot = pkg !== 'review' && pkg !== 'review_campaign';
   const isReview = pkg === 'review' || pkg === 'bundle' || pkg === 'review_campaign' || pkg === 'all' || pkg === 'bot_campaign';
   const isCampaign = pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign';
 
-  // Email 2 — Day 3: Check in on install progress
-  setTimeout(async function() {
-    await sendEmail(
+  // Email 2 — Day 3
+  queueEmail(
       email,
       'Quick check-in — ' + bizName,
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
@@ -746,12 +790,10 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
         <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you ran into any issues or need help with the install, just reply to this email and I'll sort it out same day.</p>
         <p style="color:#555;font-size:14px;line-height:1.7;">— Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds · netifybuilds@gmail.com</span></p>
       </div>`
-    );
-  }, 3 * 24 * 60 * 60 * 1000); // 3 days
+  , 3 * 24 * 60 * 60 * 1000); // 3 days
 
-  // Email 3 — Day 7: Check-in with results nudge
-  setTimeout(async function() {
-    await sendEmail(
+  // Email 3 — Day 7
+  queueEmail(
       email,
       'Still here if you need anything — ' + bizName,
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
@@ -764,12 +806,10 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
         </div>` : ''}
         <p style="color:#555;font-size:14px;line-height:1.7;">Just reply here if you need anything. I'm always around.<br><br>— Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds · netifybuilds@gmail.com</span></p>
       </div>`
-    );
-  }, 7 * 24 * 60 * 60 * 1000); // 7 days
+  , 7 * 24 * 60 * 60 * 1000); // 7 days
 
-  // Email 4 -- Day 14: Results nudge
-  setTimeout(async function() {
-    await sendEmail(
+  // Email 4 -- Day 14
+  queueEmail(
       email,
       'Two weeks in -- how are things looking, ' + firstName + '?',
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
@@ -780,12 +820,10 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
         ${isCampaign ? `<p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">If you haven't sent your customer list yet, now is a great time -- reply to this email and we'll get your first campaign scheduled.</p>` : ''}
         <p style="color:#555;font-size:14px;line-height:1.7;">Any questions at all, just reply here.<br><br>-- Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds</span></p>
       </div>`
-    );
-  }, 14 * 24 * 60 * 60 * 1000); // 14 days
+  , 14 * 24 * 60 * 60 * 1000); // 14 days
 
-  // Email 5 -- Day 30: Results review
-  setTimeout(async function() {
-    await sendEmail(
+  // Email 5 -- Day 30
+  queueEmail(
       email,
       'One month with Netify Builds -- ' + bizName,
       `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;">
@@ -798,8 +836,7 @@ function scheduleWelcomeSequence(email, ownerName, bizName, pkg, website) {
         </div>` : ''}
         <p style="color:#555;font-size:14px;line-height:1.7;">As always -- any issues or updates needed, just reply here. I'm around.<br><br>-- Eli<br><span style="color:#94a3b8;font-size:12px;">Netify Builds</span></p>
       </div>`
-    );
-  }, 30 * 24 * 60 * 60 * 1000); // 30 days
+  , 30 * 24 * 60 * 60 * 1000); // 30 days
 }
 
 function buildQuickReplies(data) {
