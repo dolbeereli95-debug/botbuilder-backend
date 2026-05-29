@@ -974,6 +974,10 @@ app.post('/signup', async (req, res) => {
     '===== END OF CLIENT DATA ====='
   ].join('\n');
 
+
+  // Generate bizKey early so it's available in the email template
+  const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -1026,7 +1030,7 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
     if (!response.ok) return res.status(500).json({ error: 'Email send failed' });
 
     // Auto-register client in portal system
-    const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+    // bizKey already declared above
     // Extract domain from website URL
     let clientDomain = '';
     if (website) {
