@@ -1932,9 +1932,9 @@ app.get('/client-info/:bizKey', (req, res) => {
 });
 const conversationLogs = loadData('conversation_logs.json', {});
 app.post('/log-conversation', (req, res) => {
-  const { bizName, messages, leadCaptured, leadName, leadPhone, leadJobType, timestamp } = req.body;
-  if (!bizName) return res.status(400).json({ error: 'bizName required' });
-  const key = bizName.toLowerCase().replace(/\s+/g, '_');
+  const { bizName, bizKey, messages, leadCaptured, leadName, leadPhone, leadJobType, timestamp } = req.body;
+  const key = (bizKey || bizName || '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (!key) return res.status(400).json({ error: 'bizKey or bizName required' });
   if (!conversationLogs[key]) conversationLogs[key] = [];
   conversationLogs[key].unshift({
     messages: messages || [],
@@ -2075,9 +2075,9 @@ app.post('/urgent-escalation', async (req, res) => {
 // ── ANALYTICS ──
 const analyticsLogs = loadData('analytics_logs.json', {});
 app.post('/log-analytics', (req, res) => {
-  const { bizName, event, data } = req.body;
-  if (!bizName) return res.status(400).json({ error: 'bizName required' });
-  const key = bizName.toLowerCase().replace(/\s+/g, '_');
+  const { bizName, bizKey, event, data } = req.body;
+  const key = (bizKey || bizName || '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (!key) return res.status(400).json({ error: 'bizKey or bizName required' });
   if (!analyticsLogs[key]) analyticsLogs[key] = { conversations: 0, messages: 0, leads: 0, firstMessages: [], startDate: new Date().toISOString() };
   if (event === 'conversation') analyticsLogs[key].conversations++;
   if (event === 'message') analyticsLogs[key].messages++;
