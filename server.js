@@ -1923,11 +1923,18 @@ app.get('/client-info/:bizKey', (req, res) => {
 });
 const conversationLogs = loadData('conversation_logs.json', {});
 app.post('/log-conversation', (req, res) => {
-  const { bizName, messages, leadCaptured, timestamp } = req.body;
+  const { bizName, messages, leadCaptured, leadName, leadPhone, leadJobType, timestamp } = req.body;
   if (!bizName) return res.status(400).json({ error: 'bizName required' });
   const key = bizName.toLowerCase().replace(/\s+/g, '_');
   if (!conversationLogs[key]) conversationLogs[key] = [];
-  conversationLogs[key].unshift({ messages: messages || [], leadCaptured: leadCaptured || false, timestamp: timestamp || new Date().toISOString() });
+  conversationLogs[key].unshift({
+    messages: messages || [],
+    leadCaptured: leadCaptured || false,
+    leadName: leadName || '',
+    leadPhone: leadPhone || '',
+    leadJobType: leadJobType || '',
+    timestamp: timestamp || new Date().toISOString()
+  });
   if (conversationLogs[key].length > 50) conversationLogs[key] = conversationLogs[key].slice(0, 50);
   debouncedSave('conversation_logs.json', conversationLogs);
   res.json({ success: true });
