@@ -924,8 +924,19 @@ NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURE
 }
 
 app.post('/signup', async (req, res) => {
-  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, package: pkg, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture } = req.body;
+  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture } = req.body;
   if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
+
+  // Normalize plan label to plan code
+  let pkg = req.body.package || req.body.pkg || '';
+  if (pkg.includes('Chat') && pkg.includes('Review') && pkg.includes('Campaign')) pkg = 'all';
+  else if (pkg.includes('Chat') && pkg.includes('Review')) pkg = 'bundle';
+  else if (pkg.includes('Chat') && pkg.includes('Campaign')) pkg = 'bot_campaign';
+  else if (pkg.includes('Review') && pkg.includes('Campaign')) pkg = 'review_campaign';
+  else if (pkg.includes('Chat') || pkg === 'bot') pkg = 'bot';
+  else if (pkg.includes('Review')) pkg = 'review';
+  else if (pkg.includes('Campaign')) pkg = 'campaign';
+  else if (!pkg) pkg = 'bot';
 
   const pkgLabel = 
     pkg === 'all'           ? 'All Products Bundle (Chat + Review + Campaigns) — 15% off' :
