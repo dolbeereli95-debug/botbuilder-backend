@@ -1949,6 +1949,24 @@ app.post('/log-conversation', (req, res) => {
   res.json({ success: true });
 });
 
+// Delete single conversation
+app.delete('/delete-conversation/:bizKey/:idx', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const idx = parseInt(req.params.idx);
+  if (!conversationLogs[key]) return res.status(404).json({ error: 'Not found' });
+  conversationLogs[key].splice(idx, 1);
+  debouncedSave('conversation_logs.json', conversationLogs);
+  res.json({ success: true });
+});
+
+// Clear all conversations
+app.delete('/clear-conversations/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  conversationLogs[key] = [];
+  debouncedSave('conversation_logs.json', conversationLogs);
+  res.json({ success: true });
+});
+
 app.get('/conversations/:bizKey', (req, res) => {
   const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   res.json({ conversations: (conversationLogs[key] || []).slice(0, 20) });
