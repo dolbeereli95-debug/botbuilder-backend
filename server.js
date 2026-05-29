@@ -193,7 +193,15 @@ app.post('/chat', rateLimit, async (req, res) => {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
   }
-  if (!systemPrompt || typeof systemPrompt !== 'string') {
+  // Fall back to stored system prompt if widget didn't send one
+  let resolvedPrompt = systemPrompt;
+  if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && bizKey) {
+    const storedClient = clientInfo[bizKey.toLowerCase()];
+    if (storedClient && storedClient.systemPrompt) {
+      resolvedPrompt = storedClient.systemPrompt;
+    }
+  }
+  if (!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) {
     return res.status(400).json({ error: 'systemPrompt is required' });
   }
 
@@ -435,7 +443,7 @@ Never use markdown.${siteContext}`;
   // Inject current date/time so bot knows if it's after hours
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
   const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.\n\nREMINDER: Keep your response to 2-3 short sentences maximum. If a customer asks about multiple things, answer the most important one and ask a follow-up. Never write more than 4 sentences under any circumstances. Short, conversational, human.`;
-  const enrichedPrompt = systemPrompt + timeInjection;
+  const enrichedPrompt = resolvedPrompt + timeInjection;
 
   try {
     const response = await anthropic.messages.create({
@@ -500,7 +508,7 @@ Never use markdown.${siteContext}`;
 
       if (userHasPhone && userHasName) {
         // Customer provided both — bot should have triggered LEAD_CAPTURED but didn't
-        const bizName = systemPrompt.match(/for ([^,\.]+)/)?.[1] || 'Unknown Business';
+        const bizName = resolvedPrompt.match(/for ([^,\.]+)/)?.[1] || 'Unknown Business';
         console.warn('[MISSED LEAD DETECTED]', bizName, '| User message:', lastUserMsg.substring(0, 100));
         // Fire alert to owner email if we can extract it from system prompt
         const emailMatch = systemPrompt.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
@@ -548,7 +556,7 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
   const featureList = (features || '').toLowerCase();
   const hasAppointment = featureList.includes('appointment');
   const hasCalendar = featureList.includes('calendar') || featureList.includes('google calendar');
-  const hasEmergency = featureList.includes('emergency');
+  const hasEmergency = featureList.includes('emergency') || !!(data.emergency && data.emergency.trim() && data.emergency !== 'Not provided');
   const hasMultilang = featureList.includes('multilanguage') || featureList.includes('multilang');
   const hasPricing = featureList.includes('pricing');
   const hasWorkout = featureList.includes('workout');
@@ -2628,6 +2636,186 @@ app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
   clientInfo[key].systemPrompt = prompt;
   debouncedSave('client_info.json', clientInfo);
   res.json({ success: true, prompt });
+});
+
+// ── DEMO BOT GENERATOR ──
+app.post('/admin/generate-demo', requireAdmin, (req, res) => {
+  const { bizName, botName, bizInitial, color, systemPrompt, qrs, emergs } = req.body;
+  if (!bizName) return res.status(400).json({ error: 'bizName required' });
+
+  const c = color || '#0A2540';
+  const bn = botName || bizName + ' Assistant';
+  const bi = bizInitial || bizName.charAt(0).toUpperCase();
+  const sp = JSON.stringify(systemPrompt || '');
+  const qrsJson = JSON.stringify(qrs || ['Get a quote', 'Hours & availability', 'Service area']);
+  const ergsJson = JSON.stringify(emergs || ['Emergency service', 'Get a quote', 'Service area']);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>${bizName} — Bot Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'DM Sans',sans-serif;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+.wrap{max-width:440px;width:100%;text-align:center;}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.8);font-size:11px;font-weight:600;padding:5px 14px;border-radius:99px;margin-bottom:20px;letter-spacing:0.02em;}
+.title{font-family:'Plus Jakarta Sans',sans-serif;font-size:2rem;font-weight:800;color:white;letter-spacing:-0.03em;margin-bottom:8px;line-height:1.2;}
+.sub{font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:28px;line-height:1.6;}
+.cta-box{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:16px;padding:18px 22px;text-align:left;}
+.cta-box p{font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);margin-bottom:12px;}
+.cta-box a{display:inline-flex;align-items:center;gap:6px;background:white;color:#0A2540;font-size:13px;font-weight:700;padding:10px 20px;border-radius:99px;text-decoration:none;}
+#nb-w{position:fixed;bottom:24px;right:24px;z-index:9999;width:60px;height:60px;border-radius:50%;background:${c};border:none;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:transform 0.2s;}
+#nb-w:hover{transform:scale(1.08);}
+#nb-w svg{width:26px;height:26px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;position:absolute;top:50%;left:50%;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);}
+#nb-w .o{transform:translate(-50%,-50%) scale(1);opacity:1;}
+#nb-w .x{transform:translate(-50%,-50%) scale(0.5);opacity:0;stroke-width:2.5;}
+#nb-b{position:fixed;bottom:96px;right:16px;z-index:9998;width:calc(100vw - 32px);max-width:388px;background:white;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,0.18);border:1px solid rgba(0,0,0,0.06);display:none;flex-direction:column;overflow:hidden;font-family:'DM Sans',-apple-system,sans-serif;opacity:0;transform:translateY(16px);transition:opacity 0.25s,transform 0.25s cubic-bezier(0.16,1,0.3,1);}
+#nb-b.op{display:flex;}#nb-b.vi{opacity:1;transform:translateY(0);}
+#hh{background:${c};position:relative;overflow:hidden;}
+#hh::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,0.07) 1px,transparent 1px);background-size:20px 20px;pointer-events:none;}
+#hi{position:relative;z-index:1;padding:24px 22px 22px;}
+.av{width:44px;height:44px;border-radius:50%;border:2.5px solid rgba(0,0,0,0.15);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;}
+.av1{background:rgba(255,255,255,0.2);color:white;}
+.av2{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;font-size:10px;margin-left:-10px;}
+#hg{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:800;color:white;letter-spacing:-0.03em;line-height:1.2;margin-bottom:6px;}
+#hs{font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:14px;}
+#lb{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.2);color:#4ade80;font-size:11px;font-weight:600;padding:5px 12px;border-radius:99px;}
+#ld{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pl 2s infinite;}
+@keyframes pl{0%,100%{opacity:1}50%{opacity:0.5}}
+#ac{background:#f8fafc;padding:16px 16px 6px;}
+.ab{width:100%;background:white;border:1.5px solid #e2e8f0;border-radius:16px;padding:15px 16px;display:flex;align-items:center;gap:13px;cursor:pointer;font-family:inherit;transition:all 0.18s;text-align:left;margin-bottom:8px;}
+.ab:hover{border-color:#cbd5e1;box-shadow:0 4px 16px rgba(0,0,0,0.07);transform:translateY(-1px);}
+.bi{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.bi svg{width:19px;height:19px;fill:none;stroke-width:2;stroke-linecap:round;}
+.bc{background:#eff6ff;}.bc svg{stroke:#2563eb;}
+.bp{background:#f0fdf4;}.bp svg{stroke:#16a34a;}
+.be{background:#fff7ed;}.be svg{stroke:#ea580c;}
+.bt{font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;color:#0f172a;margin-bottom:2px;}
+.bs{font-size:12px;color:#64748b;}
+.ba{margin-left:auto;color:#cbd5e1;flex-shrink:0;}
+.ba svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;}
+#hf{background:#f8fafc;padding:10px 16px 14px;text-align:center;font-size:10.5px;color:#cbd5e1;border-top:1px solid #f1f5f9;}
+#cs{display:none;flex-direction:column;background:white;}
+#cs.vi{display:flex;}
+#ct{padding:14px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px;background:white;}
+#bk{width:32px;height:32px;border-radius:9px;background:#f8fafc;border:1.5px solid #e2e8f0;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+#bk svg{width:16px;height:16px;stroke:#475569;fill:none;stroke-width:2.5;stroke-linecap:round;}
+#cn{font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;color:#0f172a;}
+#cst{display:flex;align-items:center;gap:4px;font-size:11px;color:#94a3b8;margin-top:1px;}
+#cd{width:5px;height:5px;border-radius:50%;background:#22c55e;animation:pl 2s infinite;}
+#ms{flex:1;min-height:300px;max-height:360px;overflow-y:auto;padding:18px 14px 10px;display:flex;flex-direction:column;gap:10px;background:#f8fafc;}
+#ms::-webkit-scrollbar{width:0;}
+.mb{max-width:268px;padding:10px 15px;font-size:13.5px;line-height:1.55;word-wrap:break-word;white-space:pre-wrap;}
+.mb.bot{background:white;color:#0f172a;border:1.5px solid #e2e8f0;border-radius:4px 18px 18px 18px;align-self:flex-start;}
+.mb.user{background:${c};color:white;border-radius:18px 4px 18px 18px;align-self:flex-end;}
+.ty{align-self:flex-start;background:white;border:1.5px solid #e2e8f0;border-radius:4px 18px 18px 18px;padding:12px 16px;display:flex;gap:5px;}
+.ty span{width:5px;height:5px;border-radius:50%;background:#94a3b8;animation:td 1.2s infinite;}
+.ty span:nth-child(2){animation-delay:0.2s;}.ty span:nth-child(3){animation-delay:0.4s;}
+@keyframes td{0%,100%{opacity:0.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+#qr{display:flex;flex-wrap:wrap;gap:6px;padding:6px 14px 0;}
+.qb{background:white;border:1.5px solid #e2e8f0;border-radius:99px;padding:6px 14px;font-size:12.5px;font-weight:500;color:#334155;cursor:pointer;font-family:inherit;transition:all 0.15s;}
+.qb:hover{border-color:${c};background:${c};color:white;}
+#ir{padding:12px 14px 14px;background:white;border-top:1px solid #f1f5f9;}
+#ib{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:9px 9px 9px 14px;transition:all 0.15s;}
+#ib:focus-within{border-color:${c};background:white;}
+#ni{flex:1;border:none;background:transparent;font-size:16px;font-family:inherit;color:#0f172a;outline:none;}
+#ni::placeholder{color:#94a3b8;}
+#sn{width:34px;height:34px;border-radius:10px;background:${c};border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+#sn:hover{opacity:0.85;}
+#sn svg{width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;}
+#cf{text-align:center;margin-top:8px;font-size:10px;color:#cbd5e1;}
+@media(max-width:480px){#nb-b{right:0;left:0;width:100%;max-width:100%;border-radius:20px 20px 0 0;bottom:0;height:82vh;transform:none!important;}#nb-w{bottom:80px;right:16px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge">&#x26A1; Demo by Netify Builds</div>
+  <div class="title">${bizName}<br>Chat Assistant</div>
+  <div class="sub">This is exactly what your customers would see on your website. Try it &mdash; tap the button in the bottom right corner.</div>
+  <div class="cta-box">
+    <p>Want this on your website, trained on your real business, capturing leads 24/7?</p>
+    <a href="https://netifybuilds.com" target="_blank">Get yours at netifybuilds.com &rarr;</a>
+  </div>
+</div>
+
+<button id="nb-w">
+  <svg class="o" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <svg class="x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+</button>
+
+<div id="nb-b">
+  <div id="home-screen">
+    <div id="hh"><div id="hi">
+      <div style="display:flex;margin-bottom:18px;"><div class="av av1">${bi}</div><div class="av av2">AI</div></div>
+      <div id="hg">Hi there &#x1F44B;<br>How can we help?</div>
+      <div id="hs">${bizName}</div>
+      <div id="lb"><div id="ld"></div>&nbsp;We&rsquo;re online now</div>
+    </div></div>
+    <div id="ac">
+      <button class="ab" onclick="showChat('question')">
+        <div class="bi bc"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div><div class="bt">I have a question</div><div class="bs">Get answers instantly, 24/7</div></div>
+        <div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </button>
+      <button class="ab" onclick="showChat('callback')">
+        <div class="bi bp"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.28h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6 6l.87-.87a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+        <div><div class="bt">Request a callback</div><div class="bs">Leave your number, we'll call back</div></div>
+        <div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </button>
+      <button class="ab" onclick="showChat('emergency')">
+        <div class="bi be"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        <div><div class="bt">Emergency service</div><div class="bs">Urgent issue? We respond fast</div></div>
+        <div class="ba"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </button>
+    </div>
+    <div id="hf">Powered by <a href="https://netifybuilds.com" target="_blank" style="color:#94a3b8;">Netify Builds</a></div>
+  </div>
+
+  <div id="cs">
+    <div id="ct">
+      <button id="bk" onclick="showHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <div style="flex:1;"><div id="cn">${bn}</div><div id="cst"><div id="cd"></div>&nbsp;Online &middot; Replies instantly</div></div>
+      <button onclick="closeChat()" style="width:28px;height:28px;border-radius:8px;background:#f8fafc;border:1.5px solid #e2e8f0;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#475569;fill:none;stroke-width:2.5;stroke-linecap:round;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="ms"></div>
+    <div id="qr"></div>
+    <div id="ir">
+      <div id="ib"><input id="ni" placeholder="Type a message..." autocomplete="off"/><button id="sn"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div>
+      <div id="cf">Powered by <a href="https://netifybuilds.com" target="_blank" style="color:#cbd5e1;">Netify Builds</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var BE='https://botbuilder-backend-production.up.railway.app';
+var SP=${sp};
+var QR=${qrsJson};
+var ER=${ergsJson};
+var msgs=[],gs=false,io=false;
+var w=document.getElementById('nb-w');
+var b=document.getElementById('nb-b');
+var fm={question:"Sure, what's on your mind? I can help with questions about our services, pricing, hours, or anything else.",callback:"Of course! What's your name and best callback number?",emergency:"We're on it. What's happening right now?"};
+var cr={question:QR,callback:[],emergency:ER};
+function showChat(t){document.getElementById('home-screen').style.display='none';document.getElementById('cs').classList.add('vi');if(!gs){gs=true;addMsg(fm[t]||fm.question,'bot');msgs.push({role:'assistant',content:fm[t]||fm.question});showQR(cr[t]||[]);}setTimeout(function(){document.getElementById('ni').focus();},300);}
+function showHome(){document.getElementById('cs').classList.remove('vi');document.getElementById('home-screen').style.display='block';msgs=[];gs=false;document.getElementById('ms').innerHTML='';document.getElementById('qr').innerHTML='';}
+function closeChat(){b.classList.remove('vi');setTimeout(function(){b.classList.remove('op');w.style.display='flex';},220);io=false;}
+function addMsg(tx,rl){var m=document.getElementById('ms');var d=document.createElement('div');d.className='mb '+rl;d.textContent=tx;m.appendChild(d);m.scrollTop=m.scrollHeight;}
+function showQR(rs){var q=document.getElementById('qr');q.innerHTML='';(rs||[]).forEach(function(r){var btn=document.createElement('button');btn.className='qb';btn.textContent=r;btn.onclick=function(){q.innerHTML='';document.getElementById('ni').value=r;send();};q.appendChild(btn);});}
+async function send(){var inp=document.getElementById('ni');var tx=inp.value.trim();if(!tx)return;inp.value='';document.getElementById('qr').innerHTML='';addMsg(tx,'user');msgs.push({role:'user',content:tx});var m=document.getElementById('ms');var ty=document.createElement('div');ty.className='ty';ty.innerHTML='<span></span><span></span><span></span>';m.appendChild(ty);m.scrollTop=m.scrollHeight;try{var rs=await fetch(BE+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs.slice(-8),systemPrompt:SP,bizKey:''})});var d=await rs.json();ty.remove();var rp=d.reply||'Sorry, something went wrong.';if(rp.includes('LEAD_CAPTURED|')){rp=rp.split('LEAD_CAPTURED|')[0].trim();}addMsg(rp,'bot');msgs.push({role:'assistant',content:rp});}catch(e){ty.remove();addMsg('Sorry, something went wrong. Please try again.','bot');}}
+w.addEventListener('click',function(){if(io)return;io=true;w.style.display='none';b.classList.add('op');setTimeout(function(){b.classList.add('vi');},10);});
+document.getElementById('sn').addEventListener('click',send);
+document.getElementById('ni').addEventListener('keypress',function(e){if(e.key==='Enter')send();});
+</script>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + (bizName || 'demo').replace(/[^a-z0-9]/gi,'_').toLowerCase() + '_demo_bot.html"');
+  res.send(html);
 });
 
 // ── WIDGET SCRIPT GENERATOR ──
