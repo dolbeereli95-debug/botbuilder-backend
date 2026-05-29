@@ -193,6 +193,15 @@ app.post('/chat', rateLimit, async (req, res) => {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
   }
+  // Check activation status
+  if (bizKey) {
+    const clientKey = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client = clientInfo[clientKey];
+    if (client && client.activated === false) {
+      return res.status(403).json({ error: 'Bot not yet activated. Please activate your bot in the client portal to go live.' });
+    }
+  }
+
   // Fall back to stored system prompt if widget didn't send one
   let resolvedPrompt = systemPrompt;
   if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && bizKey) {
@@ -1063,7 +1072,7 @@ app.post('/signup', async (req, res) => {
 &lt;script&gt;
 window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSON.stringify(botName || bizName + ' Assistant')},accentColor:'${botColor || '#0A2540'}',backend:'https://botbuilder-backend-production.up.railway.app',leadEmail:${JSON.stringify(email)}};
 &lt;/script&gt;
-&lt;script src="https://netifybuilds.com/widget-loader.js" async&gt;&lt;/script&gt;</pre>
+&lt;script src="https://netifybuilds.com/widget-loader.js"&gt;&lt;/script&gt;</pre>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
               <li>Send the install code above to the client or their web developer</li>
               ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Review filter is ready automatically — just make sure their Google review link is saved in their client record</li>' : ''}
@@ -2951,7 +2960,7 @@ window.__nb = {
   systemPrompt: ${JSON.stringify(client.systemPrompt || '')}
 };
 </script>
-<script src="https://netifybuilds.com/widget-loader.js" async></script>
+<script src="https://netifybuilds.com/widget-loader.js"></script>
 <!-- End Netify Builds Widget -->`);
 });
 
