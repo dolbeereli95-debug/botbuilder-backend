@@ -970,7 +970,7 @@ NEVER: Use markdown. Make up features or prices. Be pushy. Show the LEAD_CAPTURE
 }
 
 app.post('/signup', async (req, res) => {
-  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture } = req.body;
+  const { ownerName, bizName, email, phone, website, industry, area, hours, services, faqs, tone, differentiators, licensing, emergency, seasonal, botPersonality, billing, hearAbout, googleReviewLink, botColor, features, alertEmail, reviewColor, campaignListSize, campaignListFormat, extraCampaigns, leadCapture, platform } = req.body;
   if (!email || !bizName) return res.status(400).json({ error: 'email and bizName are required' });
 
   // Normalize plan label to plan code
@@ -1115,7 +1115,8 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
        tone: tone || 'friendly',
        leadCapture: leadCapture || 'name_phone',
        emergency: emergency || '',
-       features: features || ''
+       features: features || '',
+       platform: platform || 'other'
      };
 
 
@@ -2680,6 +2681,109 @@ function extractSiteContent(html) {
   ].filter(Boolean).join('\n');
 }
 
+// ── PLATFORM INSTALL INSTRUCTIONS ──
+function getPlatformInstructions(platform, widgetCode) {
+  const code = widgetCode || '<!-- widget code -->';
+  const platforms = {
+    wordpress: {
+      name: 'WordPress',
+      steps: [
+        'Log into your WordPress dashboard',
+        'Go to Appearance → Theme File Editor (or use a plugin like "Insert Headers and Footers")',
+        'Find your theme\'s footer.php file and paste the widget code just before the closing </body> tag',
+        'Click Update File',
+        'Visit your website to confirm the chat button appears'
+      ],
+      easy: 'Easiest option: Install the free plugin "Insert Headers and Footers" by WPCode, then paste the widget code in the Footer section.',
+      loginNote: 'To give Eli temporary access: go to Users → Add New, create an account with the Administrator role, and share those credentials. Delete the account after setup.'
+    },
+    wix: {
+      name: 'Wix',
+      steps: [
+        'Log into your Wix account and open your site editor',
+        'Click Settings in the left panel',
+        'Select Custom Code under Advanced',
+        'Click + Add Custom Code',
+        'Paste the widget code, name it "Netify Chat", set it to load in Body - end',
+        'Click Apply and then Publish your site'
+      ],
+      easy: 'This takes about 3 minutes in Wix.',
+      loginNote: 'To give Eli temporary access: go to Settings → Roles & Permissions → Invite People. Invite netifybuilds@gmail.com with the Admin role. You can remove access after setup.'
+    },
+    squarespace: {
+      name: 'Squarespace',
+      steps: [
+        'Log into Squarespace and go to your website',
+        'Click Settings → Advanced → Code Injection',
+        'Scroll to the Footer section and paste the widget code there',
+        'Click Save',
+        'Visit your website to confirm the chat button appears'
+      ],
+      easy: 'Code Injection is available on Business plan and above.',
+      loginNote: 'To give Eli temporary access: go to Settings → Permissions → Invite Contributor. Invite netifybuilds@gmail.com as an Administrator.'
+    },
+    webflow: {
+      name: 'Webflow',
+      steps: [
+        'Open your Webflow project in the Designer',
+        'Click the gear icon (Project Settings)',
+        'Go to the Custom Code tab',
+        'Paste the widget code in the Footer Code section',
+        'Click Save Changes, then Publish your site'
+      ],
+      easy: 'This takes about 2 minutes in Webflow.',
+      loginNote: 'To give Eli temporary access: go to your project Settings → Collaborators → Invite. Invite netifybuilds@gmail.com with Editor access.'
+    },
+    shopify: {
+      name: 'Shopify',
+      steps: [
+        'From your Shopify admin, go to Online Store → Themes',
+        'Click Actions → Edit Code on your active theme',
+        'Open the theme.liquid file',
+        'Paste the widget code just before the closing </body> tag',
+        'Click Save'
+      ],
+      easy: 'This takes about 3 minutes.',
+      loginNote: 'To give Eli temporary access: go to Settings → Users and Permissions → Add Staff. Invite netifybuilds@gmail.com with full permissions.'
+    },
+    godaddy: {
+      name: 'GoDaddy Website Builder',
+      steps: [
+        'Log into GoDaddy and open your Website Builder',
+        'Go to Settings → Custom Code (or use the HTML widget)',
+        'Add an HTML element to your page footer and paste the widget code',
+        'Save and publish your site'
+      ],
+      easy: 'If you don\'t see a Custom Code option, reply to your setup email and Eli will handle it directly.',
+      loginNote: 'To give Eli access: go to My Account → Delegate Access → Grant Access. Enter netifybuilds@gmail.com.'
+    },
+    custom: {
+      name: 'Custom Website',
+      steps: [
+        'Open your website\'s main HTML file (usually index.html)',
+        'Find the closing </body> tag near the bottom',
+        'Paste the widget code just before </body>',
+        'Save the file and upload it to your server',
+        'Visit your website to confirm the chat button appears'
+      ],
+      easy: 'If your site is managed by a developer, just forward them your setup email — it has everything they need.',
+      loginNote: 'To give Eli access, share your FTP or hosting control panel credentials via the secure form below.'
+    },
+    other: {
+      name: 'Your Website',
+      steps: [
+        'Find where you can add custom code or scripts to your website',
+        'Look for a "Custom Code", "Header/Footer Scripts", or "HTML" section in your platform settings',
+        'Paste the widget code in the Footer or before the closing </body> tag',
+        'Save and publish'
+      ],
+      easy: 'Not sure how to do this? Reply to your setup email and Eli will figure it out with you.',
+      loginNote: 'To give Eli access, share your website platform login via the secure form below.'
+    }
+  };
+  return platforms[platform] || platforms['other'];
+}
+
 // ── ADMIN ENDPOINTS ──
 
 // Admin auth middleware
@@ -2700,7 +2804,7 @@ app.get('/admin/clients', requireAdmin, (req, res) => {
 app.post('/admin/update-client/:bizKey', requireAdmin, (req, res) => {
   const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
-  const allowed = ['bizName','email','phone','plan','domain','googleReviewLink','emergency','botName','botColor','services','hours','area','faqs','differentiators','tone','leadCapture','systemPrompt','activated','features','isFree'];
+  const allowed = ['bizName','email','phone','plan','domain','googleReviewLink','emergency','botName','botColor','services','hours','area','faqs','differentiators','tone','leadCapture','systemPrompt','activated','features','isFree','platform'];
   allowed.forEach(function(field) {
     if (req.body[field] !== undefined) clientInfo[key][field] = req.body[field];
   });
@@ -2725,6 +2829,39 @@ app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
   clientInfo[key].systemPrompt = prompt;
   debouncedSave('client_info.json', clientInfo);
   res.json({ success: true, prompt });
+});
+
+// ── CREDENTIALS HANDOFF ──
+app.post('/send-credentials', async (req, res) => {
+  const { bizKey, username, password, loginUrl } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+  const client = clientInfo[bizKey] || {};
+  const bizName = client.bizName || bizKey || 'Unknown';
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'netifybuilds@gmail.com',
+        subject: 'Install credentials from ' + bizName,
+        html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;">' +
+          '<h2 style="color:#0A2540;">Install Access — ' + bizName + '</h2>' +
+          '<p style="font-size:14px;color:#555;">A client has shared their login credentials for bot installation.</p>' +
+          '<table style="width:100%;border-collapse:collapse;margin:20px 0;">' +
+          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;width:130px;">Business</td><td style="padding:10px;font-size:13px;">' + bizName + '</td></tr>' +
+          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Username</td><td style="padding:10px;font-size:13px;">' + username + '</td></tr>' +
+          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Password</td><td style="padding:10px;font-size:13px;">' + password + '</td></tr>' +
+          (loginUrl ? '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Login URL</td><td style="padding:10px;font-size:13px;"><a href="' + loginUrl + '">' + loginUrl + '</a></td></tr>' : '') +
+          '</table>' +
+          '<p style="font-size:12px;color:#ef4444;">⚠ Delete these credentials from your email after installing. Remind the client to change their password.</p>' +
+          '</div>'
+      })
+    });
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Failed to send' });
+  }
 });
 
 // ── DEMO BOT GENERATOR ──
