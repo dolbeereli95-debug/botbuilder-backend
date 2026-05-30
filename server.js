@@ -138,7 +138,9 @@ async function sendEditToExtension(bizKey, edit) {
 
 app.use(cors({
   origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
     if (!origin) return callback(null, true);
+    // Always allow netifybuilds.com and localhost for admin/portal
     if (
       origin.includes('netifybuilds.com') ||
       origin.includes('netifybuilds.pages.dev') ||
@@ -147,8 +149,10 @@ app.use(cors({
     ) {
       return callback(null, true);
     }
-    return callback(new Error('Not allowed by CORS'));
-  }
+    // Allow all other origins for widget endpoints (client sites can be any domain)
+    return callback(null, true);
+  },
+  credentials: false
 }));
 app.use(express.json({ limit: '50kb' }));
 
