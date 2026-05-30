@@ -663,7 +663,7 @@ app.post('/lead', async (req, res) => {
     // ── CONVERSATION SUMMARY ──
     // Generate a 2-sentence summary of the conversation before sending the lead email
     let conversationSummary = '';
-    if (conversation && conversation.length > 0) {
+    if (conversation && Array.isArray(conversation) && conversation.length > 0) {
       try {
         const summaryResponse = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
