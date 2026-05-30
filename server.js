@@ -722,11 +722,15 @@ app.post('/lead', async (req, res) => {
         </div>`
       }),
     });
-    if (!response.ok) return res.status(500).json({ error: 'Email send failed' });
+    if (!response.ok) {
+      const errBody = await response.json().catch(function() { return {}; });
+      console.error('[Lead] Resend error:', response.status, JSON.stringify(errBody));
+      return res.status(500).json({ error: 'Email send failed', detail: errBody });
+    }
     res.json({ success: true });
   } catch (err) {
-    console.error('[Lead Error]', err.message);
-    res.status(500).json({ error: 'Lead capture failed' });
+    console.error('[Lead Error]', err.message, err.stack);
+    res.status(500).json({ error: 'Lead capture failed', detail: err.message });
   }
 });
 
