@@ -2835,32 +2835,38 @@ app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
 app.post('/send-credentials', async (req, res) => {
   const { bizKey, username, password, loginUrl } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
-  const client = clientInfo[bizKey] || {};
+  const client = clientInfo[(bizKey || '').toLowerCase()] || {};
   const bizName = client.bizName || bizKey || 'Unknown';
   try {
-    await fetch('https://api.resend.com/emails', {
+    const resendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: 'onboarding@resend.dev',
         to: 'netifybuilds@gmail.com',
-        subject: 'Install credentials from ' + bizName,
-        html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;">' +
-          '<h2 style="color:#0A2540;">Install Access — ' + bizName + '</h2>' +
-          '<p style="font-size:14px;color:#555;">A client has shared their login credentials for bot installation.</p>' +
-          '<table style="width:100%;border-collapse:collapse;margin:20px 0;">' +
-          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;width:130px;">Business</td><td style="padding:10px;font-size:13px;">' + bizName + '</td></tr>' +
-          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Username</td><td style="padding:10px;font-size:13px;">' + username + '</td></tr>' +
-          '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Password</td><td style="padding:10px;font-size:13px;">' + password + '</td></tr>' +
-          (loginUrl ? '<tr><td style="padding:10px;background:#f8fafc;font-weight:600;font-size:13px;">Login URL</td><td style="padding:10px;font-size:13px;"><a href="' + loginUrl + '">' + loginUrl + '</a></td></tr>' : '') +
+        subject: '🔐 Install credentials from ' + bizName,
+        html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
+          '<h2 style="color:#0A2540;margin-bottom:6px;">Install Access — ' + bizName + '</h2>' +
+          '<p style="font-size:14px;color:#555;margin-bottom:20px;">A client has shared their login for bot installation.</p>' +
+          '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;width:130px;border-bottom:1px solid #e2e8f0;">Business</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + bizName + '</td></tr>' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;">Username</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + username + '</td></tr>' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;' + (loginUrl ? 'border-bottom:1px solid #e2e8f0;' : '') + '">Password</td><td style="padding:12px 16px;font-size:13px;font-family:monospace;' + (loginUrl ? 'border-bottom:1px solid #e2e8f0;' : '') + '">' + password + '</td></tr>' +
+          (loginUrl ? '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;">Login URL</td><td style="padding:12px 16px;font-size:13px;"><a href="' + loginUrl + '" style="color:#2563eb;">' + loginUrl + '</a></td></tr>' : '') +
           '</table>' +
-          '<p style="font-size:12px;color:#ef4444;">⚠ Delete these credentials from your email after installing. Remind the client to change their password.</p>' +
+          '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:12px;color:#dc2626;">Delete this email after installing. Remind the client to change their password when done.</div>' +
           '</div>'
       })
     });
+    const resendData = await resendRes.json();
+    if (!resendRes.ok) {
+      console.error('[Credentials] Resend error:', JSON.stringify(resendData));
+      return res.status(500).json({ error: 'Email failed: ' + (resendData.message || 'Unknown error') });
+    }
     res.json({ success: true });
   } catch(e) {
-    res.status(500).json({ error: 'Failed to send' });
+    console.error('[Credentials] Error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
