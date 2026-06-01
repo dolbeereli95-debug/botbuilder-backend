@@ -656,9 +656,9 @@ app.post('/lead', async (req, res) => {
   // Look up owner phone from clientInfo if not provided directly
   const clientKey = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
   const clientRecord = clientKey ? clientInfo[clientKey] : null;
-  console.log('[Lead] bizKey:', bizKey, '| clientKey:', clientKey, '| phone:', clientRecord && clientRecord.phone, '| resolved:', resolvedOwnerPhone);
-  console.log('[Lead] Twilio configured:', !!process.env.TWILIO_ACCOUNT_SID, !!process.env.TWILIO_AUTH_TOKEN, !!process.env.TWILIO_PHONE_NUMBER);
   const resolvedOwnerPhone = ownerPhone || (clientRecord && clientRecord.phone) || null;
+  console.log('[Lead] Twilio configured:', !!process.env.TWILIO_ACCOUNT_SID, !!process.env.TWILIO_AUTH_TOKEN, !!process.env.TWILIO_PHONE_NUMBER);
+  console.log('[Lead] bizKey:', bizKey, '| clientKey:', clientKey, '| phone:', clientRecord && clientRecord.phone, '| resolved:', resolvedOwnerPhone);
 
   // SMS ALERT (Twilio)
   if (resolvedOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
