@@ -2851,7 +2851,7 @@ app.post('/send-credentials', async (req, res) => {
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: 'onboarding@resend.dev',
-        to: 'netifybuilds@gmail.com',
+        to: 'dolbeereli95@gmail.com',
         subject: '🔐 Install credentials from ' + bizName,
         html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
           '<h2 style="color:#0A2540;margin-bottom:6px;">Install Access — ' + bizName + '</h2>' +
