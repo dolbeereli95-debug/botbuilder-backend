@@ -664,7 +664,7 @@ app.post('/lead', async (req, res) => {
   if (resolvedOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
     try {
       const smsBody = `New lead from your website!\nName: ${name || 'Unknown'}\nPhone: ${phone || 'Unknown'}\nJob: ${jobType || 'Not specified'}\nUrgency: ${urgency || 'Normal'}\n\nCall them back!`;
-      await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+      const twilioResp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
         method: 'POST',
         headers: {
           'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
@@ -672,6 +672,8 @@ app.post('/lead', async (req, res) => {
         },
         body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: resolvedOwnerPhone, Body: smsBody }).toString()
       });
+      const twilioData = await twilioResp.json().catch(function(){return {};});
+      console.log('[SMS] Twilio status:', twilioResp.status, '| error:', twilioData.message || twilioData.error_message || 'none');
     } catch (smsErr) {
       console.error('[SMS Error] Lead alert failed:', smsErr.message);
     }
