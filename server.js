@@ -457,7 +457,7 @@ Never use markdown.${siteContext}`;
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
   const chatContextMap = {
     question: 'CURRENT CONTEXT: The customer clicked "I have a question" to start this chat. They want information. Help them and naturally move toward lead capture if appropriate.',
-    callback: 'CURRENT CONTEXT: The customer clicked "Request a callback" — they want someone to call them. Your ONLY job here is to collect their name and phone number. Do not ask what the call is about. Do not offer information. Just get their name and number, confirm it back, and wrap up.',
+    callback: 'CURRENT CONTEXT: The customer clicked "Request a callback" — they want someone to call them. Collect their name and phone number. They may give both in one message or separately — either way is fine. Once you have both a name and a number, confirm it back and wrap up. Do not ask for information they already gave you. Do not ask what the call is about.',
     emergency: 'CURRENT CONTEXT: The customer clicked "Emergency service" — they have an urgent problem right now. Acknowledge the urgency immediately, find out what is happening, and collect their name and number as fast as possible.'
   };
   const chatContextInjection = chatType && chatContextMap[chatType] ? '\n\n' + chatContextMap[chatType] : '';
@@ -990,7 +990,7 @@ ${faqs ? 'FAQs: ' + faqs : ''}
 LEAD COLLECTION:
 ${leadCapture === 'name_only' ? 'Collect the customer name only. Then let them know someone will follow up.' :
   leadCapture === 'name_email' ? 'Collect the customer name and email address through natural conversation.' :
-  'When someone asks for a callback or needs follow-up, collect their name first then phone number. Just name and number — do not ask what the call is about. Once you have both, confirm naturally: "Got it, [name] at [number] — someone will be in touch shortly. Anything else?" If they say no or nothing else, say something brief like "Perfect, talk soon!" and stop. Do not keep asking questions after the lead is captured.'}
+  'When someone asks for a callback or needs follow-up, collect their name and phone number. They may give both in one message — if they do, use both immediately. Do not ask for something the customer already gave you. Once you have a name and a number, confirm naturally: "Got it, [name] at [number] — someone will be in touch shortly. Anything else?" If they say no, say "Perfect, talk soon!" and stop.'}
 
 Once you have the required contact info, output this trigger exactly at the very end of your response on its own line:
 LEAD_CAPTURED|[name]|[phone_or_email]|[job type or Not specified]|[urgency or Not specified]
