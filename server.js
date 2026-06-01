@@ -2839,6 +2839,52 @@ app.post('/admin/regenerate-prompt/:bizKey', requireAdmin, (req, res) => {
   res.json({ success: true, prompt });
 });
 
+// ── DEMO REQUEST ──
+app.post('/demo-request', async (req, res) => {
+  const { name, phone, bizName, industry, location, hours, services, website } = req.body;
+  if (!name || !phone) return res.status(400).json({ error: 'Name and phone required' });
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: 'dolbeereli95@gmail.com',
+        subject: '⚡ Demo Request — ' + (bizName || name),
+        html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:20px;">
+          <div style="background:#0A2540;border-radius:12px;padding:24px 28px;margin-bottom:24px;">
+            <h1 style="font-size:20px;font-weight:800;color:white;margin:0 0 4px;">New Demo Request</h1>
+            <p style="font-size:13px;color:rgba(255,255,255,0.5);margin:0;">Someone wants to see their bot in action</p>
+          </div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;width:140px;border-bottom:1px solid #e2e8f0;color:#64748b;">Name</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;font-weight:600;">${name}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Phone</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;"><a href="tel:${phone}" style="color:#2563eb;font-weight:600;">${phone}</a></td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Business</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;">${bizName || '—'}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Industry</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;">${industry || '—'}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Location</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;">${location || '—'}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Hours</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;">${hours || '—'}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;color:#64748b;">Services</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #e2e8f0;">${services || '—'}</td></tr>
+            <tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;color:#64748b;">Website</td><td style="padding:12px 16px;font-size:14px;">${website ? '<a href="https://' + website.replace(/^https?:\/\//, '') + '" style="color:#2563eb;">' + website + '</a>' : '—'}</td></tr>
+          </table>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;">
+            <p style="font-size:13px;color:#1d4ed8;font-weight:600;margin:0 0 4px;">Next step</p>
+            <p style="font-size:13px;color:#1e40af;margin:0;">Build their demo bot using the admin tool at netifybuilds.com/admin and send them the file. Call ${phone} to follow up.</p>
+          </div>
+        </div>`
+      })
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(function() { return {}; });
+      console.error('[Demo Request] Resend error:', errBody);
+      return res.status(500).json({ error: 'Email failed' });
+    }
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[Demo Request] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── CREDENTIALS HANDOFF ──
 app.post('/send-credentials', async (req, res) => {
   const { bizKey, username, password, loginUrl } = req.body;
