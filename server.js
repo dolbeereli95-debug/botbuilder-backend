@@ -1912,11 +1912,30 @@ app.post('/appointment-request', async (req, res) => {
       })
     });
     res.json({ success: true });
+
+    // SMS to owner for appointment request
+    const apptClient = clientInfo[(bizKey || '').toLowerCase()];
+    const apptOwnerPhone = apptClient && apptClient.phone;
+    if (apptOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+      fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          From: process.env.TWILIO_PHONE_NUMBER,
+          To: apptOwnerPhone,
+          Body: `New appointment request!\nName: ${customerName || 'Unknown'}\nPhone: ${customerPhone || 'Unknown'}\nDay: ${preferredDay || 'Flexible'}\nTime: ${preferredTime || 'Flexible'}\nReason: ${reason || 'Not specified'}`
+        }).toString()
+      }).catch(function(e) { console.error('[SMS] Appointment request alert failed:', e.message); });
+    }
   } catch(e) {
     console.error('[Appointment Request Error]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // -- CONFIRM ACTIVATION (called by Stripe webhook after payment) --
 app.post('/confirm-activation', async (req, res) => {
