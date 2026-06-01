@@ -3196,7 +3196,7 @@ app.get('/widget-inline/:bizKey', (req, res) => {
   const bizNameSafe = (client.bizName || 'Your Business').replace(/[`'\\]/g, ' ');
   const botNameSafe = (client.botName || bizNameSafe + ' Assistant').replace(/[`'\\]/g, ' ');
   const accentColor = client.botColor || '#0A2540';
-  const bizInitial = bizName.charAt(0).toUpperCase();
+  const bizInitial = bizNameSafe.charAt(0).toUpperCase();
 
   res.setHeader('Content-Type', 'text/plain');
   res.send(`<!-- Netify Builds Chat Widget for ${client.bizName} -->
