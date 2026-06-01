@@ -992,8 +992,6 @@ ${leadCapture === 'name_only' ? 'Collect the customer name only. Then let them k
   leadCapture === 'name_email' ? 'Collect the customer name and email address through natural conversation.' :
   'When someone asks for a callback or needs follow-up, collect their name first then phone number. Just name and number — do not ask what the call is about. Once you have both, confirm naturally: "Got it, [name] at [number] — someone will be in touch shortly. Anything else?" If they say no or nothing else, say something brief like "Perfect, talk soon!" and stop. Do not keep asking questions after the lead is captured.'}
 
-PHONE VALIDATION: If the number given is clearly too short or invalid (US numbers have 10 digits), ask "Just want to make sure I got that right — can you double check that number?" Do not fire the trigger with an invalid number. Never require or expect +1 — just collect the 10 digit number naturally.
-
 Once you have the required contact info, output this trigger exactly at the very end of your response on its own line:
 LEAD_CAPTURED|[name]|[phone_or_email]|[job type or Not specified]|[urgency or Not specified]
 
