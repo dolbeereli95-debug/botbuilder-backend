@@ -442,7 +442,7 @@ Never use markdown.${siteContext}`;
   }
   const cleanMessages = messages
     .filter(m => m && typeof m.content === 'string' && ['user', 'assistant'].includes(m.role))
-    .slice(-10);
+    .slice(-16);
   if (cleanMessages.length === 0) {
     return res.status(400).json({ error: 'No valid messages found' });
   }
@@ -455,13 +455,13 @@ Never use markdown.${siteContext}`;
 
   // Inject current date/time so bot knows if it's after hours
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
-  const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.\n\nREMINDER: Keep your response to 2-3 short sentences maximum. If a customer asks about multiple things, answer the most important one and ask a follow-up. Never write more than 4 sentences under any circumstances. Short, conversational, human.`;
+  const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.\n\nCONVERSATION GUIDANCE: Keep responses conversational and concise — 2-3 sentences is ideal. Read the full conversation carefully so you always know what has already been said, what the customer actually needs, and where you are in the lead capture process. Never ask for information the customer already gave you. Think like a knowledgeable human assistant, not a script-following bot.`;
   const enrichedPrompt = resolvedPrompt + timeInjection;
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
       system: enrichedPrompt,
       messages: trimmedMessages,
     });
