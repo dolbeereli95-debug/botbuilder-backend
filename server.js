@@ -530,7 +530,7 @@ Never use markdown.${siteContext}`;
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              from: 'onboarding@resend.dev',
+              from: 'onboarding@netifybuilds.com',
               to: emailMatch[0],
               bcc: 'dolbeereli95@gmail.com',
               subject: '⚠️ Possible missed lead — ' + bizName,
@@ -695,7 +695,7 @@ app.post('/lead', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: businessEmail,
         bcc: 'dolbeereli95@gmail.com',
         subject: (urgency && (urgency.toLowerCase().includes('urgent') || urgency.toLowerCase().includes('emergency')) ? '🚨 URGENT — ' : '') + 'New Lead: ' + (name || 'Someone') + (phone ? ' · ' + phone : '') + ' via ' + (businessName || 'your website'),
@@ -740,7 +740,7 @@ async function sendEmail(to, subject, html) {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'onboarding@resend.dev', to, bcc: 'dolbeereli95@gmail.com', subject, html })
+      body: JSON.stringify({ from: 'onboarding@netifybuilds.com', to, bcc: 'dolbeereli95@gmail.com', subject, html })
     });
   } catch(e) { console.error('[Email error]', e.message); }
 }
@@ -1051,7 +1051,7 @@ app.post('/signup', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '🚀 New Signup: ' + bizName + ' — ' + pkgLabel,
         html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
@@ -1368,7 +1368,7 @@ app.post('/review-lead', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: businessEmail,
         subject: subjectPrefix + 'Private Feedback -- ' + (businessName || 'your business'),
         html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">
@@ -1424,7 +1424,7 @@ app.post('/activate-client', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '💳 Client heading to Stripe -- ' + (clientInfo[key].bizName || key),
         html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;">
@@ -1542,7 +1542,7 @@ async function checkTriggerCampaigns() {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: 'onboarding@resend.dev',
+          from: 'onboarding@netifybuilds.com',
           to: 'dolbeereli95@gmail.com',
           subject: 'Trigger campaign fired -- ' + (client.bizName || bizKey),
           html: '<div style="font-family:sans-serif;padding:24px;"><h3>Trigger campaign sent</h3><p><strong>Client:</strong> ' + (client.bizName || bizKey) + '</p><p><strong>Industry:</strong> ' + industry + '</p><p><strong>Sent to:</strong> ' + sent + ' customers</p><p><strong>Message:</strong> ' + trigger.message + '</p></div>'
@@ -1747,7 +1747,7 @@ const { Body, From, To } = req.body;
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            from: 'onboarding@resend.dev',
+            from: 'onboarding@netifybuilds.com',
             to: client.email,
             bcc: 'dolbeereli95@gmail.com',
             subject: (isUrgent ? '🚨 URGENT -- ' : '⚠️ ') + 'Private SMS Feedback -- ' + (client.bizName || key),
@@ -1811,7 +1811,7 @@ const { Body, From, To } = req.body;
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              from: 'onboarding@resend.dev',
+              from: 'onboarding@netifybuilds.com',
               to: client.email,
               bcc: 'dolbeereli95@gmail.com',
               subject: 'Missed call lead captured -- ' + leadName + ' -- ' + (client.bizName || key),
@@ -1877,7 +1877,7 @@ app.post('/appointment-request', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: businessEmail,
         bcc: 'dolbeereli95@gmail.com',
         subject: 'New Appointment Request -- ' + (businessName || 'your business'),
@@ -1920,7 +1920,7 @@ app.post('/confirm-activation', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '🟢 Payment confirmed -- ' + (clientInfo[key].bizName || key),
         html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #86efac;">
@@ -1993,7 +1993,7 @@ app.post('/update-knowledge', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '🔧 Bot update request — ' + (bizName || bizKey),
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:16px;">
@@ -2073,7 +2073,7 @@ app.post('/urgent-escalation', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: businessEmail,
         bcc: 'dolbeereli95@gmail.com',
         subject: '🚨 URGENT — Customer requesting immediate callback | ' + (bizName || 'your business'),
@@ -2525,7 +2525,7 @@ async function sendWeeklyHealthReport() {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: 'Weekly Client Health Report -- ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
         html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px;">
@@ -2591,7 +2591,7 @@ async function sendMonthlyReviewReport(bizKey) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: client.email,
         bcc: 'dolbeereli95@gmail.com',
         subject: 'Your ' + monthName + ' Review Report -- ' + (client.bizName || bizKey),
@@ -2848,7 +2848,7 @@ app.post('/demo-request', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '⚡ Demo Request — ' + (bizName || name),
         html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:20px;">
@@ -2896,7 +2896,7 @@ app.post('/send-credentials', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
         subject: '🔐 Install credentials from ' + bizName,
         html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
@@ -3339,7 +3339,7 @@ app.post('/calendar/book', async (req, res) => {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: 'onboarding@resend.dev',
+          from: 'onboarding@netifybuilds.com',
           to: client2.email,
           bcc: 'dolbeereli95@gmail.com',
           subject: 'New appointment booked — ' + (customerName || 'Customer'),
@@ -3467,7 +3467,7 @@ app.post('/send-change-summary', async (req, res) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'onboarding@netifybuilds.com',
         to: client.email,
         bcc: 'dolbeereli95@gmail.com',
         subject: 'Website changes summary -- ' + (client.bizName || bizKey),
