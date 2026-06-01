@@ -516,7 +516,7 @@ Never use markdown.${siteContext}`;
               },
               body: new URLSearchParams({
                 From: process.env.TWILIO_PHONE_NUMBER,
-                To: ownerPhone,
+                To: normalizePhone(ownerPhone) || ownerPhone,
                 Body: `New appointment booked!\nName: ${custName}\nPhone: ${custPhone}\nService: ${service}\nTime: ${slot.label}`
               }).toString()
             }).catch(function(e) { console.error('[SMS] Booking alert failed:', e.message); });
@@ -656,7 +656,7 @@ app.post('/lead', async (req, res) => {
   // Look up owner phone from clientInfo if not provided directly
   const clientKey = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
   const clientRecord = clientKey ? clientInfo[clientKey] : null;
-  const resolvedOwnerPhone = ownerPhone || (clientRecord && clientRecord.phone) || null;
+  const resolvedOwnerPhone = normalizePhone(ownerPhone || (clientRecord && clientRecord.phone));
   console.log('[Lead] Twilio configured:', !!process.env.TWILIO_ACCOUNT_SID, !!process.env.TWILIO_AUTH_TOKEN, !!process.env.TWILIO_PHONE_NUMBER);
   console.log('[Lead] bizKey:', bizKey, '| clientKey:', clientKey, '| phone:', clientRecord && clientRecord.phone, '| resolved:', resolvedOwnerPhone);
 
@@ -983,7 +983,9 @@ ${faqs ? 'FAQs: ' + faqs : ''}
 LEAD COLLECTION:
 ${leadCapture === 'name_only' ? 'Collect the customer name only. Then let them know someone will follow up.' :
   leadCapture === 'name_email' ? 'Collect the customer name and email address through natural conversation.' :
-  'Naturally collect the customer name then phone number through conversation. Never ask again once collected.'}
+  'When someone asks for a callback or needs follow-up, collect their name first then phone number. Just name and number — do not ask what the call is about. Once you have both, confirm naturally: "Got it, [name] at [number] — someone will be in touch shortly. Anything else?" If they say no or nothing else, say something brief like "Perfect, talk soon!" and stop. Do not keep asking questions after the lead is captured.'}
+
+PHONE VALIDATION: If the number given is clearly too short or invalid (US numbers have 10 digits), ask "Just want to make sure I got that right — can you double check that number?" Do not fire the trigger with an invalid number. Never require or expect +1 — just collect the 10 digit number naturally.
 
 Once you have the required contact info, output this trigger exactly at the very end of your response on its own line:
 LEAD_CAPTURED|[name]|[phone_or_email]|[job type or Not specified]|[urgency or Not specified]
@@ -1928,7 +1930,7 @@ app.post('/appointment-request', async (req, res) => {
         },
         body: new URLSearchParams({
           From: process.env.TWILIO_PHONE_NUMBER,
-          To: apptOwnerPhone,
+          To: normalizePhone(apptOwnerPhone) || apptOwnerPhone,
           Body: `New appointment request!\nName: ${customerName || 'Unknown'}\nPhone: ${customerPhone || 'Unknown'}\nDay: ${preferredDay || 'Flexible'}\nTime: ${preferredTime || 'Flexible'}\nReason: ${reason || 'Not specified'}`
         }).toString()
       }).catch(function(e) { console.error('[SMS] Appointment request alert failed:', e.message); });
@@ -2725,6 +2727,20 @@ function extractSiteContent(html) {
     hoursMatch ? 'HOURS CONTENT: ' + hoursMatch.slice(0,3).join(' ') : 'HOURS: not clearly listed',
     'PAGE TEXT SAMPLE: ' + text.substring(0, 2000)
   ].filter(Boolean).join('\n');
+}
+
+// ── PHONE NORMALIZATION ──
+function normalizePhone(raw) {
+  if (!raw) return null;
+  // Strip everything except digits
+  var digits = String(raw).replace(/[^\d]/g, '');
+  // If 10 digits, add +1
+  if (digits.length === 10) return '+1' + digits;
+  // If 11 digits starting with 1, add +
+  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
+  // Already has + prefix and looks valid
+  if (String(raw).startsWith('+') && digits.length >= 10) return '+' + digits;
+  return null; // invalid
 }
 
 // ── PLATFORM INSTALL INSTRUCTIONS ──
