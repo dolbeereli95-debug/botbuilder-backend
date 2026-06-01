@@ -183,7 +183,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/chat', rateLimit, async (req, res) => {
-  const { messages, systemPrompt, bizKey, isAdminSession: clientAdminFlag } = req.body;
+  const { messages, systemPrompt, bizKey, isAdminSession: clientAdminFlag, chatType } = req.body;
 
   // Domain validation -- check the widget is being used from a registered domain
   const origin = req.headers.origin || req.headers.referer || '';
@@ -455,7 +455,14 @@ Never use markdown.${siteContext}`;
 
   // Inject current date/time so bot knows if it's after hours
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
-  const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.\n\nCONVERSATION GUIDANCE: Keep responses conversational and concise — 2-3 sentences is ideal. Read the full conversation carefully so you always know what has already been said, what the customer actually needs, and where you are in the lead capture process. Never ask for information the customer already gave you. Think like a knowledgeable human assistant, not a script-following bot.`;
+  const chatContextMap = {
+    question: 'CURRENT CONTEXT: The customer clicked "I have a question" to start this chat. They want information. Help them and naturally move toward lead capture if appropriate.',
+    callback: 'CURRENT CONTEXT: The customer clicked "Request a callback" — they want someone to call them. Your ONLY job here is to collect their name and phone number. Do not ask what the call is about. Do not offer information. Just get their name and number, confirm it back, and wrap up.',
+    emergency: 'CURRENT CONTEXT: The customer clicked "Emergency service" — they have an urgent problem right now. Acknowledge the urgency immediately, find out what is happening, and collect their name and number as fast as possible.'
+  };
+  const chatContextInjection = chatType && chatContextMap[chatType] ? '\n\n' + chatContextMap[chatType] : '';
+
+  const timeInjection = `\n\nCURRENT DATE AND TIME: ${now} (Eastern Time). Use this to determine if the business is currently open or closed based on the business hours above.\n\nCONVERSATION GUIDANCE: Keep responses conversational and concise — 2-3 sentences is ideal. Read the full conversation carefully so you always know what has already been said, what the customer actually needs, and where you are in the lead capture process. Never ask for information the customer already gave you. Think like a knowledgeable human assistant, not a script-following bot.` + chatContextInjection;
   const enrichedPrompt = resolvedPrompt + timeInjection;
 
   try {
