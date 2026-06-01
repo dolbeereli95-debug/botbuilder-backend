@@ -505,6 +505,22 @@ Never use markdown.${siteContext}`;
         });
         const bookData = await bookRes2.json();
         if (bookData.success) {
+          // SMS to owner when appointment booked
+          const ownerPhone = clientInfo[bizKey] && clientInfo[bizKey].phone;
+          if (ownerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+            fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: new URLSearchParams({
+                From: process.env.TWILIO_PHONE_NUMBER,
+                To: ownerPhone,
+                Body: `New appointment booked!\nName: ${custName}\nPhone: ${custPhone}\nService: ${service}\nTime: ${slot.label}`
+              }).toString()
+            }).catch(function(e) { console.error('[SMS] Booking alert failed:', e.message); });
+          }
           return res.json({ reply: reply.split('BOOK_SLOT|')[0].trim() + ' Your ' + service + ' is confirmed for ' + slot.label + '. See you then!', bizKey, booked: true });
         }
       } catch(e) { console.error('[Book Slot Error]', e.message); }
@@ -634,29 +650,29 @@ Only output the system prompt text, nothing else. No preamble, no explanation.`;
 });
 
 app.post('/lead', async (req, res) => {
-  const { name, phone, jobType, urgency, businessEmail, businessName, ownerPhone, conversation } = req.body;
+  const { name, phone, jobType, urgency, businessEmail, businessName, ownerPhone, bizKey, conversation } = req.body;
   if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
 
-  // ── SMS ALERT (Twilio) ──
-  if (ownerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+  // Look up owner phone from clientInfo if not provided directly
+  const clientKey = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const clientRecord = clientKey ? clientInfo[clientKey] : null;
+  const resolvedOwnerPhone = ownerPhone || (clientRecord && clientRecord.phone) || null;
+
+  // SMS ALERT (Twilio)
+  if (resolvedOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
     try {
-      const smsBody = `New lead from your website!\nName: ${name || 'Unknown'}\nPhone: ${phone || 'Unknown'}\nJob: ${jobType || 'Not specified'}\nUrgency: ${urgency || 'Normal'}\n\nCall them back! Reply STOP to stop these alerts.`;
+      const smsBody = `New lead from your website!\nName: ${name || 'Unknown'}\nPhone: ${phone || 'Unknown'}\nJob: ${jobType || 'Not specified'}\nUrgency: ${urgency || 'Normal'}\n\nCall them back!`;
       await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
         method: 'POST',
         headers: {
           'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: new URLSearchParams({
-          From: process.env.TWILIO_PHONE_NUMBER,
-          To: ownerPhone,
-          Body: smsBody
-        }).toString()
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: resolvedOwnerPhone, Body: smsBody }).toString()
       });
-      console.log('[SMS] Lead alert sent to', ownerPhone);
+      console.log('[SMS] Lead alert sent to', resolvedOwnerPhone);
     } catch (smsErr) {
       console.error('[SMS Error] Lead alert failed:', smsErr.message);
-      // Don't fail the whole request — email still goes out
     }
   }
   try {
