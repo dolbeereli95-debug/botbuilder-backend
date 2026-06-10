@@ -664,8 +664,6 @@ app.post('/lead', async (req, res) => {
   const clientKey = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
   const clientRecord = clientKey ? clientInfo[clientKey] : null;
   const resolvedOwnerPhone = normalizePhone(ownerPhone || (clientRecord && clientRecord.phone));
-  console.log('[Lead] Twilio configured:', !!process.env.TWILIO_ACCOUNT_SID, !!process.env.TWILIO_AUTH_TOKEN, !!process.env.TWILIO_PHONE_NUMBER);
-  console.log('[Lead] bizKey:', bizKey, '| clientKey:', clientKey, '| phone:', clientRecord && clientRecord.phone, '| resolved:', resolvedOwnerPhone);
 
   // SMS ALERT (Twilio)
   if (resolvedOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
@@ -677,10 +675,10 @@ app.post('/lead', async (req, res) => {
           'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: resolvedOwnerPhone, Body: smsBody }).toString()
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(resolvedOwnerPhone) || resolvedOwnerPhone, Body: smsBody }).toString()
       });
       const twilioData = await twilioResp.json().catch(function(){return {};});
-      console.log('[SMS] Twilio status:', twilioResp.status, '| error:', twilioData.message || twilioData.error_message || 'none');
+      if (!twilioResp.ok) console.error('[SMS Error]', twilioResp.status, twilioData.message || 'unknown');
     } catch (smsErr) {
       console.error('[SMS Error] Lead alert failed:', smsErr.message);
     }
@@ -1356,7 +1354,7 @@ app.post('/review-lead', async (req, res) => {
           'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: ownerPhone, Body: urgentSMS }).toString()
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(ownerPhone) || ownerPhone, Body: urgentSMS }).toString()
       });
       console.log('[Urgent SMS] Sent to', ownerPhone, 'for', businessName);
     } catch(smsErr) {
@@ -1548,7 +1546,7 @@ async function checkTriggerCampaigns() {
         await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
           method: 'POST',
           headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: customer.phone, Body: message }).toString()
+          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(customer.phone) || customer.phone, Body: message }).toString()
         });
         sent++;
       } catch(smsErr) {
@@ -1658,7 +1656,7 @@ app.post('/call-status', async (req, res) => {
         },
         body: new URLSearchParams({
           From: process.env.TWILIO_PHONE_NUMBER,
-          To: caller,
+          To: normalizePhone(caller) || caller,
           Body: greeting
         }).toString()
       });
@@ -1721,154 +1719,6 @@ const { Body, From, To } = req.body;
   }
 
   let responseText = '';
-
-  if (session && session.stage === 'awaiting_rating') {
-    const rating = parseInt(reply);
-    if (isNaN(rating) || rating < 1 || rating > 5) {
-      responseText = 'Please reply with a number from 1 to 5.';
-    } else if (rating >= 4) {
-      // Happy customer — send Google review link
-      const googleLink = session.googleReviewLink || '';
-      responseText = 'We\'re so glad to hear that! If you have a moment, a Google review would mean the world to us: ' + googleLink;
-      // Log as positive
-      const key = session.bizKey;
-      if (!reviewLogs[key]) reviewLogs[key] = [];
-      reviewLogs[key].push({
-        type: 'positive',
-        feedback: 'SMS review: rated ' + rating + '/5',
-        name: session.customerName || 'SMS Customer',
-        contact: phone,
-        date: new Date().toISOString(),
-        source: 'sms'
-      });
-      debouncedSave('review_logs.json', reviewLogs);
-      smsSessionStore[phone] = { ...session, stage: 'complete', rating };
-    } else {
-      // Unhappy customer — ask for feedback
-      responseText = 'We\'re sorry to hear that. Would you mind telling us what went wrong? Your feedback helps us improve.';
-      smsSessionStore[phone] = { ...session, stage: 'awaiting_feedback', rating };
-    }
-  } else if (session && session.stage === 'awaiting_feedback') {
-    // Log negative feedback
-    const key = session.bizKey;
-    if (!reviewLogs[key]) reviewLogs[key] = [];
-    const urgentWords = ['lawyer','attorney','sue','refund','fraud','terrible','horrible','worst','furious','scam'];
-    const isUrgent = urgentWords.some(w => reply.includes(w));
-    reviewLogs[key].push({
-      type: 'negative',
-      feedback: Body.trim(),
-      name: session.customerName || 'SMS Customer',
-      contact: phone,
-      date: new Date().toISOString(),
-      source: 'sms',
-      resolved: false
-    });
-    debouncedSave('review_logs.json', reviewLogs);
-
-    // Email the business owner
-    const client = clientInfo[key] || {};
-    if (client.email) {
-      try {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: 'onboarding@netifybuilds.com',
-            to: client.email,
-            bcc: 'dolbeereli95@gmail.com',
-            subject: (isUrgent ? '🚨 URGENT -- ' : '⚠️ ') + 'Private SMS Feedback -- ' + (client.bizName || key),
-            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">
-              <h2 style="color:#c2410c;margin-bottom:4px;">Private Feedback via SMS</h2>
-              <p style="color:#555;font-size:14px;margin-bottom:16px;">A customer replied to your review request with negative feedback.</p>
-              <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb;margin-bottom:16px;">
-                <p style="font-size:14px;margin:0 0 8px;"><strong>Customer:</strong> ${session.customerName || 'Unknown'}</p>
-                <p style="font-size:14px;margin:0 0 8px;"><strong>Phone:</strong> ${phone}</p>
-                <p style="font-size:14px;margin:0 0 8px;"><strong>Rating:</strong> ${session.rating}/5</p>
-                <p style="font-size:14px;margin:0;"><strong>Feedback:</strong> ${Body.trim()}</p>
-              </div>
-              <p style="color:#c2410c;font-size:13px;font-weight:600;">A quick follow-up call can often prevent a bad Google review.</p>
-              <p style="color:#999;font-size:12px;margin-top:16px;text-align:center;">Sent by Netify Builds</p>
-            </div>`
-          })
-        });
-      } catch(e) { console.error('[SMS Feedback Email Error]', e.message); }
-
-      // Urgent SMS to owner
-      if (isUrgent && client.phone && process.env.TWILIO_ACCOUNT_SID) {
-        try {
-          await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
-            method: 'POST',
-            headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: client.phone, Body: 'URGENT: A customer left urgent negative feedback via SMS. Check your Netify Builds portal now. Reply STOP to opt out.' }).toString()
-          });
-        } catch(e) {}
-      }
-    }
-
-    responseText = 'Thank you for letting us know. We take all feedback seriously and will be in touch shortly.';
-    smsSessionStore[phone] = { ...session, stage: 'complete' };
-  } else if (session && session.stage === 'bot_conversation') {
-    // Missed call text back -- run through the bot
-    const key = session.bizKey;
-    const client = clientInfo[key] || {};
-    try {
-      session.messages.push({ role: 'user', content: Body.trim() });
-      const smsSystemPrompt = `You are a helpful assistant for ${client.bizName || 'a local service business'}. A customer missed your call and you texted them back. Keep replies short (1-2 sentences max, this is SMS). Naturally collect their name and what they need help with. Once you have their name and service needed, output LEAD_CAPTURED|[name]|[phone]|[job type]|[urgency] at the very end. Never show the trigger to the customer.`;
-      const aiRes = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
-        system: smsSystemPrompt,
-        messages: session.messages.slice(-6)
-      });
-      let botReply = aiRes.content[0].text;
-
-      // Check for lead capture
-      if (botReply.includes('LEAD_CAPTURED|')) {
-        const parts = botReply.split('LEAD_CAPTURED|')[1].split('|');
-        const leadName = parts[0] || 'Unknown';
-        const leadPhone = phone;
-        const jobType = parts[2] || 'General inquiry';
-        const urgency = parts[3] || 'Normal';
-        botReply = botReply.split('LEAD_CAPTURED|')[0].trim();
-
-        // Email the owner
-        if (client.email) {
-          await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              from: 'onboarding@netifybuilds.com',
-              to: client.email,
-              bcc: 'dolbeereli95@gmail.com',
-              subject: 'Missed call lead captured -- ' + leadName + ' -- ' + (client.bizName || key),
-              html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
-                <h2 style="color:#0369a1;">Missed Call Lead Captured</h2>
-                <p style="color:#374151;font-size:14px;">Your bot texted back a missed call and captured a lead.</p>
-                <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb;">
-                  <p style="font-size:14px;margin:0 0 8px;"><strong>Name:</strong> ${leadName}</p>
-                  <p style="font-size:14px;margin:0 0 8px;"><strong>Phone:</strong> ${leadPhone}</p>
-                  <p style="font-size:14px;margin:0 0 8px;"><strong>Job:</strong> ${jobType}</p>
-                  <p style="font-size:14px;margin:0;"><strong>Urgency:</strong> ${urgency}</p>
-                </div>
-                <p style="color:#0369a1;font-size:13px;font-weight:600;margin-top:16px;">Give them a call back when you get a chance.</p>
-              </div>`
-            })
-          }).catch(function(e) { console.error('[Missed Call Lead Email]', e.message); });
-        }
-        session.stage = 'complete';
-      }
-
-      session.messages.push({ role: 'assistant', content: botReply });
-      smsSessionStore[phone] = session;
-      responseText = botReply;
-    } catch(e) {
-      console.error('[SMS Bot Error]', e.message);
-      responseText = 'Thanks for your message. We\'ll be in touch soon!';
-    }
-  } else {
-    // No session found -- generic response
-    responseText = 'Thanks for your message. For help, contact us directly.';
-  }
 
   // Send reply via TwiML
   const twiml = responseText
@@ -2079,7 +1929,7 @@ app.post('/send-review-sms', async (req, res) => {
       },
       body: new URLSearchParams({
         From: process.env.TWILIO_PHONE_NUMBER,
-        To: to,
+        To: normalizePhone(to) || to,
         Body: message + '\n\nReply STOP to opt out.'
       }).toString()
     });
@@ -2199,14 +2049,17 @@ app.post('/log-review', (req, res) => {
 app.get('/review-report/:bizKey', (req, res) => {
   const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   const logs = reviewLogs[key] || [];
-  const positive = logs.filter(r => r.type === 'positive').length;
-  const negative = logs.filter(r => r.type === 'negative').length;
-  const feedback = logs.filter(r => r.type === 'negative' && r.feedback).map(r => ({
-    feedback: r.feedback,
-    contact: r.contact,
-    date: r.date
+  // Support both old format (type: positive/negative) and new format (rating: 1-5)
+  const positive = logs.filter(r => r.type === 'positive' || (r.rating && r.rating >= 4)).length;
+  const negative = logs.filter(r => r.type === 'negative' || (r.rating && r.rating <= 3)).length;
+  const feedback = logs.filter(r => (r.type === 'negative' || (r.rating && r.rating <= 3)) && (r.feedback || r.contact)).map(r => ({
+    feedback: r.feedback || '',
+    contact: r.contact || r.customerName || '',
+    rating: r.rating || null,
+    date: r.date,
+    resolved: r.resolved || false
   }));
-  res.json({ businessKey: key, total: logs.length, positive, negative, negativeFeedback: feedback });
+  res.json({ businessKey: key, total: logs.length, positive, negative, negativeFeedback: feedback, logs });
 });
 
 
@@ -2271,7 +2124,7 @@ app.post('/log-sms-job', async (req, res) => {
             'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
             'Content-Type': 'application/x-www-form-urlencoded'
           },
-          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: customerPhone, Body: message }).toString()
+          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(customerPhone) || customerPhone, Body: message }).toString()
         });
         // Mark as sent
         const logs = reviewLogs[key] || [];
@@ -2342,7 +2195,7 @@ app.post('/request-handoff', async (req, res) => {
     await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
       method: 'POST',
       headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: ownerPhone, Body: ownerMsg }).toString()
+      body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(ownerPhone) || ownerPhone, Body: ownerMsg }).toString()
     });
     console.log('[Handoff] Started for', key, 'session', sessionId);
     res.json({ success: true });
@@ -2436,7 +2289,10 @@ async function sendReview() {
   if (!phone) { document.getElementById('custPhone').focus(); return; }
 
   var firstName = name.split(' ')[0];
-  var message = name ? ('Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.') : ('Hey! Thanks for choosing ' + BIZ_NAME + '. How did we do? Reply with a number from 1 to 5. Reply STOP to opt out.');
+  var BACKEND = 'https://botbuilder-backend-production.up.railway.app';
+var BIZ_KEY = '${key}';
+var ratingLink = BACKEND + '/rate/' + BIZ_KEY + '?name=' + encodeURIComponent(name);
+var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. Mind leaving us a quick review? It takes 30 seconds: ' + ratingLink + ' Reply STOP to opt out.';
 
   var btn = document.getElementById('sendBtn');
   btn.textContent = 'Sending...';
@@ -2479,6 +2335,187 @@ async function sendReview() {
 </html>`);
 
   } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+});
+
+// ── REVIEW RATING PAGE ──
+app.get('/rate/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const bizName = client.bizName || 'this business';
+  const googleLink = client.googleReviewLink || '';
+  const customerName = req.query.name || '';
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rate ${bizName}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.card{background:white;border-radius:20px;padding:32px 28px;max-width:400px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,0.1);text-align:center;}
+.biz-name{font-size:1.2rem;font-weight:800;color:#0A2540;margin-bottom:6px;}
+.sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:28px;}
+.stars{display:flex;justify-content:center;gap:12px;margin-bottom:28px;}
+.star{font-size:44px;cursor:pointer;transition:transform 0.1s;filter:grayscale(1);opacity:0.4;}
+.star:hover,.star.selected{filter:grayscale(0);opacity:1;transform:scale(1.15);}
+.star.selected{transform:scale(1.2);}
+.feedback-box{display:none;margin-bottom:20px;}
+textarea{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;min-height:90px;outline:none;}
+textarea:focus{border-color:#2563eb;}
+.btn{width:100%;padding:14px;border-radius:99px;background:#0A2540;color:white;border:none;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.2s;display:none;}
+.btn:hover{background:#2563eb;}
+.thanks{display:none;padding:20px 0;}
+.thanks-icon{font-size:48px;margin-bottom:12px;}
+.thanks-title{font-size:1.1rem;font-weight:800;color:#0A2540;margin-bottom:8px;}
+.thanks-sub{font-size:13px;color:#64748b;line-height:1.6;}
+.google-btn{display:inline-block;margin-top:16px;padding:12px 24px;background:#4285F4;color:white;border-radius:99px;text-decoration:none;font-size:14px;font-weight:700;}
+.brand{font-size:11px;color:#cbd5e1;margin-top:24px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="rateView">
+    <div class="biz-name">${bizName}</div>
+    <p class="sub">${customerName ? 'Hi ' + customerName + '! How' : 'How'} was your experience with us?</p>
+    <div class="stars">
+      <span class="star" data-rating="1">⭐</span>
+      <span class="star" data-rating="2">⭐</span>
+      <span class="star" data-rating="3">⭐</span>
+      <span class="star" data-rating="4">⭐</span>
+      <span class="star" data-rating="5">⭐</span>
+    </div>
+    <div class="feedback-box" id="feedbackBox">
+      <textarea id="feedbackText" placeholder="What could we have done better? (optional)"></textarea>
+    </div>
+    <button class="btn" id="submitBtn" onclick="submitRating()">Submit →</button>
+  </div>
+  <div class="thanks" id="thanksView">
+    <div class="thanks-icon" id="thanksIcon">🎉</div>
+    <div class="thanks-title" id="thanksTitle">Thanks for the feedback!</div>
+    <div class="thanks-sub" id="thanksSub"></div>
+    ${googleLink ? '<a href="' + googleLink + '" class="google-btn" id="googleBtn" style="display:none;">Leave a Google Review ⭐</a>' : ''}
+  </div>
+  <div class="brand">Powered by Netify Builds</div>
+</div>
+<script>
+var BACKEND = 'https://botbuilder-backend-production.up.railway.app';
+var BIZ_KEY = '${key}';
+var GOOGLE_LINK = '${googleLink}';
+var selectedRating = 0;
+
+document.querySelectorAll('.star').forEach(function(star, i) {
+  star.addEventListener('click', function() {
+    selectedRating = parseInt(this.getAttribute('data-rating'));
+    document.querySelectorAll('.star').forEach(function(s, j) {
+      s.classList.toggle('selected', j < selectedRating);
+    });
+    document.getElementById('submitBtn').style.display = 'block';
+    if (selectedRating <= 3) {
+      document.getElementById('feedbackBox').style.display = 'block';
+    } else {
+      document.getElementById('feedbackBox').style.display = 'none';
+    }
+  });
+  star.addEventListener('mouseover', function() {
+    var r = parseInt(this.getAttribute('data-rating'));
+    document.querySelectorAll('.star').forEach(function(s, j) {
+      s.style.filter = j < r ? 'grayscale(0)' : 'grayscale(1)';
+      s.style.opacity = j < r ? '1' : '0.4';
+    });
+  });
+  star.addEventListener('mouseout', function() {
+    document.querySelectorAll('.star').forEach(function(s, j) {
+      s.style.filter = j < selectedRating ? 'grayscale(0)' : 'grayscale(1)';
+      s.style.opacity = j < selectedRating ? '1' : '0.4';
+    });
+  });
+});
+
+async function submitRating() {
+  if (!selectedRating) return;
+  var feedback = document.getElementById('feedbackText') ? document.getElementById('feedbackText').value.trim() : '';
+  var btn = document.getElementById('submitBtn');
+  btn.textContent = 'Submitting...';
+  btn.disabled = true;
+
+  try {
+    await fetch(BACKEND + '/review-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: feedback, customerName: '${customerName}' })
+    });
+  } catch(e) {}
+
+  document.getElementById('rateView').style.display = 'none';
+  var tv = document.getElementById('thanksView');
+  tv.style.display = 'block';
+
+  if (selectedRating >= 4) {
+    document.getElementById('thanksIcon').textContent = '🎉';
+    document.getElementById('thanksTitle').textContent = 'So glad you had a great experience!';
+    document.getElementById('thanksSub').textContent = 'Would you mind sharing that on Google? It helps us a lot and only takes a minute.';
+    if (GOOGLE_LINK) {
+      var gb = document.getElementById('googleBtn');
+      if (gb) gb.style.display = 'inline-block';
+    }
+  } else {
+    document.getElementById('thanksIcon').textContent = '🙏';
+    document.getElementById('thanksTitle').textContent = 'Thanks for letting us know.';
+    document.getElementById('thanksSub').textContent = 'We take all feedback seriously and will use this to improve. Sorry we fell short — we will do better.';
+  }
+}
+</script>
+</body>
+</html>`);
+});
+
+// ── REVIEW FEEDBACK HANDLER ──
+app.post('/review-feedback', async (req, res) => {
+  const { bizKey, rating, feedback, customerName } = req.body;
+  if (!bizKey || !rating) return res.status(400).json({ error: 'bizKey and rating required' });
+  const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const bizName = client.bizName || key;
+
+  // Log the review
+  if (!reviewLogs[key]) reviewLogs[key] = [];
+  reviewLogs[key].push({ rating, feedback: feedback || '', customerName: customerName || '', date: new Date().toISOString() });
+  debouncedSave('review_logs.json', reviewLogs);
+
+  // Update analytics
+  if (!analyticsLogs[key]) analyticsLogs[key] = { conversations: 0, messages: 0, leads: 0, firstMessages: [], startDate: new Date().toISOString() };
+  if (!analyticsLogs[key].reviews) analyticsLogs[key].reviews = [];
+  analyticsLogs[key].reviews.push({ rating, date: new Date().toISOString() });
+  debouncedSave('analytics_logs.json', analyticsLogs);
+
+  // If negative (1-3 stars) email the owner immediately
+  if (rating <= 3) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: 'dolbeereli95@gmail.com',
+          subject: '⚠ ' + rating + '-star feedback from ' + (customerName || 'a customer') + ' — ' + bizName,
+          html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
+            '<h2 style="color:#dc2626;margin-bottom:6px;">⚠ Negative Review Alert</h2>' +
+            '<p style="font-size:14px;color:#555;margin-bottom:20px;">A customer left a <strong>' + rating + '-star</strong> rating for <strong>' + bizName + '</strong>.</p>' +
+            '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">' +
+            '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;width:130px;border-bottom:1px solid #e2e8f0;">Customer</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + (customerName || 'Unknown') + '</td></tr>' +
+            '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;">Rating</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + rating + ' / 5 stars</td></tr>' +
+            '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;">Feedback</td><td style="padding:12px 16px;font-size:13px;">' + (feedback || 'No written feedback provided') + '</td></tr>' +
+            '</table>' +
+            '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:13px;color:#dc2626;">Reach out to this customer before they post publicly.</div>' +
+            '</div>'
+        })
+      });
+    } catch(e) { console.error('[Review Feedback] Email error:', e.message); }
+  }
+
+  res.json({ success: true });
 });
 
 // ── CLIENT HEALTH SCORE ──
@@ -2850,6 +2887,88 @@ function getPlatformInstructions(platform, widgetCode) {
   };
   return platforms[platform] || platforms['other'];
 }
+
+// ── FAQ UPDATE FROM PORTAL ──
+app.post('/update-faqs', async (req, res) => {
+  const { bizKey, faqs } = req.body;
+  if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+  const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+  clientInfo[key].faqs = faqs || '';
+  clientInfo[key].lastActivity = new Date().toISOString();
+  debouncedSave('client_info.json', clientInfo);
+  // Notify Eli
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: '📝 FAQ update from ' + (clientInfo[key].bizName || bizKey),
+        html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
+          '<h2 style="color:#0A2540;">FAQ Update</h2>' +
+          '<p style="font-size:14px;color:#555;margin-bottom:16px;"><strong>' + (clientInfo[key].bizName || bizKey) + '</strong> updated their FAQs. Regenerate their bot prompt in the admin tool.</p>' +
+          '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;font-size:13px;color:#334155;white-space:pre-wrap;">' + (faqs || 'No FAQs') + '</div>' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:13px;color:#1d4ed8;">Go to the admin tool and click Regenerate for this client.</div>' +
+          '</div>'
+      })
+    });
+  } catch(e) { console.error('[FAQ Update] Email error:', e.message); }
+  res.json({ success: true });
+});
+
+// ── BOT UPDATE REQUEST ──
+app.post('/bot-update-request', async (req, res) => {
+  const { bizKey, bizName, updateType, details } = req.body;
+  if (!bizKey || !details) return res.status(400).json({ error: 'Missing fields' });
+  const typeLabels = { hours: 'Business Hours', services: 'Services', faq: 'FAQ / Question', area: 'Service Area', tone: 'Bot Tone', pricing: 'Pricing Info', other: 'Other' };
+  const typeLabel = typeLabels[updateType] || updateType || 'General Update';
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: '✏️ Bot update request from ' + (bizName || bizKey),
+        html: '<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">' +
+          '<h2 style="color:#0A2540;margin-bottom:6px;">Bot Update Request</h2>' +
+          '<p style="font-size:14px;color:#555;margin-bottom:20px;">A client wants to update their bot.</p>' +
+          '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;width:130px;border-bottom:1px solid #e2e8f0;">Business</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + (bizName || bizKey) + '</td></tr>' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;border-bottom:1px solid #e2e8f0;">Update Type</td><td style="padding:12px 16px;font-size:13px;border-bottom:1px solid #e2e8f0;">' + typeLabel + '</td></tr>' +
+          '<tr><td style="padding:12px 16px;background:#f8fafc;font-weight:600;font-size:13px;">Details</td><td style="padding:12px 16px;font-size:13px;">' + details + '</td></tr>' +
+          '</table>' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:13px;color:#1d4ed8;">Go to the admin tool to update this client and regenerate their bot prompt.</div>' +
+          '</div>'
+      })
+    });
+    // Log last activity
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (clientInfo[key]) { clientInfo[key].lastActivity = new Date().toISOString(); debouncedSave('client_info.json', clientInfo); }
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[Bot Update Request] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── DATA BACKUP ──
+app.get('/admin/backup', (req, res) => {
+  const secret = req.headers['x-admin-secret'] || req.query.secret;
+  if (secret !== process.env.ADMIN_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const backup = {
+    exportedAt: new Date().toISOString(),
+    clientInfo,
+    conversationLogs,
+    analyticsLogs,
+    scheduledEmails: scheduledEmails || []
+  };
+  res.setHeader('Content-Disposition', 'attachment; filename="netify-backup-' + new Date().toISOString().split('T')[0] + '.json"');
+  res.setHeader('Content-Type', 'application/json');
+  res.json(backup);
+});
 
 // ── ADMIN ENDPOINTS ──
 
