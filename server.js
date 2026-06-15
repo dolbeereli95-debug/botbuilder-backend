@@ -191,7 +191,7 @@ app.post('/chat', rateLimit, async (req, res) => {
   const origin = req.headers.origin || req.headers.referer || '';
   if (bizKey && clientInfo[bizKey.toLowerCase()]) {
     const client = clientInfo[bizKey.toLowerCase()];
-    if (client.domain && origin && !origin.includes(client.domain) && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('netifybuilds')) {
+    if (client.domain && origin && chatType !== 'review_feedback' && !origin.includes(client.domain) && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('netifybuilds') && !origin.includes('railway.app')) {
       console.warn('[Domain Mismatch]', bizKey, 'called from', origin, 'expected', client.domain);
       return res.status(403).json({ reply: 'Unauthorized domain.' });
     }
