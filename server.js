@@ -623,10 +623,10 @@ const { clientData, systemPromptRequest: customSystemPrompt, features } = req.bo
     hasAppointment && !hasCalendar ? '- APPOINTMENT FLOW: When a customer asks to book or schedule, collect their preferred day, time, and reason. Do NOT confirm the appointment — tell them someone will call to confirm. Email this as a formatted appointment request.' : '',
     hasAppointment && hasCalendar ? '- CALENDAR BOOKING: You can both book appointments AND collect callback requests. When a customer describes a problem or need, naturally offer them a choice: "I can book an appointment for you right now or have someone call you back — which works better?" If they want to book, ask what service they need then output on its own line: FETCH_SLOTS. The system will provide available slots — present them as numbered options like "1. Tuesday at 10am". When they pick one, collect their name and phone if not already provided, then output: BOOK_SLOT|[slot_index]|[customer_name]|[customer_phone]|[service]. If they prefer a callback, collect name and phone normally and output the LEAD_CAPTURED trigger. Never push booking over callback — let the customer choose.' : '',
     hasMultilang ? '- MULTILANGUAGE: Detect and respond in whatever language the customer writes in. Never force English.' : '',
-    hasPricing ? '- PRICING GUIDE: When asked about cost, don\'t just say "it depends." Walk the customer through the key factors that affect price for their specific situation and give a realistic ballpark range based on the business\'s pricing data.' : '',
+    hasPricing ? '- PRICING GUIDE: When asked about cost, do not just say "it depends." Walk the customer through the key factors that affect price for their specific situation and give a realistic ballpark range based on the business\'s pricing data.' : '',
     hasWorkout ? '- WORKOUT SPLIT BUILDER: When someone asks about training, programs, or getting started, guide them through a short conversation: ask their main goal (lose weight / build muscle / improve endurance), experience level (beginner / intermediate / advanced), days per week available, and equipment access. Then provide a clear personalized weekly workout split — e.g. "Push/Pull/Legs" or "Full Body 3x" — described in plain sentences, no markdown. After delivering the split, naturally suggest they speak with a trainer at the gym to refine it and capture their name and number.' : '',
     hasGroomer ? '- PET INTAKE QUALIFIER: When a customer asks about grooming, ask about their pet\'s breed, size (small/medium/large), coat type (short/medium/long/double coat), and whether the pet is anxious or has any sensitivities. Based on their answers, tell them what service level they likely need, approximate time, and what to expect. Then capture their name and number to book.' : '',
-    hasAutoSymptom ? '- SYMPTOM CHECKER: When a customer describes a car problem — noise, warning light, vibration, smell, or handling issue — ask 1-2 clarifying questions (when it happens, which part of the car, how long it\'s been going on). Then give a plain-English explanation of the most likely cause and a realistic cost range. Always suggest they bring it in for a free inspection and capture their name and number.' : '',
+    hasAutoSymptom ? '- SYMPTOM CHECKER: When a customer describes a car problem — noise, warning light, vibration, smell, or handling issue — ask 1-2 clarifying questions (when it happens, which part of the car, how long it is been going on). Then give a plain-English explanation of the most likely cause and a realistic cost range. Always suggest they bring it in for a free inspection and capture their name and number.' : '',
     hasMoving ? '- MOVE ESTIMATOR: When someone asks about moving services or a quote, walk them through: number of rooms or bedrooms, moving distance (local/long distance), what floor they\'re on, any large or specialty items (piano, safe, etc.), and preferred timing. Give a realistic cost range based on typical rates and note factors that affect price. Then capture their name and number for a formal quote.' : '',
     hasCleaning ? '- QUOTE ESTIMATOR: When someone asks about cleaning services or pricing, ask about: square footage or number of bedrooms/bathrooms, type of cleaning (standard/deep/move-in/move-out), frequency they want (one-time/weekly/biweekly/monthly), and any pets or special requests. Give a realistic price range and mention available time slots. Then capture their name and number to book.' : '',
   ].filter(Boolean).join('\n');
@@ -1599,7 +1599,7 @@ async function checkTriggerCampaigns() {
   const seasonalTriggers = {
     'HVAC': [
       { months: [4, 5], message: 'Summer is coming fast. Have you had your AC checked yet? A quick tune-up now can save you from a breakdown on the hottest day of the year. Reply STOP to opt out.' },
-      { months: [9, 10], message: 'Cold weather is right around the corner. Get your furnace checked before the first freeze so you\'re not scrambling when it matters most. Reply STOP to opt out.' },
+      { months: [9, 10], message: 'Cold weather is right around the corner. Get your furnace checked before the first freeze so you are not scrambling when it matters most. Reply STOP to opt out.' },
     ],
     'Plumbing': [
       { months: [11, 12], message: 'Frozen pipes are one of the most expensive plumbing emergencies. A quick winterization check now can save you thousands. Reply STOP to opt out.' },
@@ -1607,7 +1607,7 @@ async function checkTriggerCampaigns() {
     ],
     'Roofing': [
       { months: [3, 4], message: 'Winter can be tough on roofs. Spring is the perfect time for an inspection to catch any damage before summer storms. Reply STOP to opt out.' },
-      { months: [9], message: 'Before winter sets in, it\'s worth having your roof inspected. Small issues now can turn into big leaks when the snow hits. Reply STOP to opt out.' },
+      { months: [9], message: 'Before winter sets in, it is worth having your roof inspected. Small issues now can turn into big leaks when the snow hits. Reply STOP to opt out.' },
     ],
     'Landscaping': [
       { months: [3, 4], message: 'Spring is here -- perfect time to get your yard looking great again. Reply STOP to opt out.' },
@@ -2664,7 +2664,7 @@ function showThanks(isPositive) {
     document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" style="width:32px;height:32px;"><circle cx="12" cy="12" r="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#2563eb" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
     document.getElementById('thanksIconWrap').style.background = '#dbeafe';
     document.getElementById('thanksTitle').textContent = 'Thank you for the feedback.';
-    document.getElementById('thanksSub').textContent = 'We take every experience seriously. This has been shared privately with the team and we\'ll use it to do better.';
+    document.getElementById('thanksSub').textContent = 'We take every experience seriously. This has been shared privately with the team and we will use it to do better.';
   }
 }
 
@@ -3204,7 +3204,7 @@ function getPlatformInstructions(platform, widgetCode) {
         'Add an HTML element to your page footer and paste the widget code',
         'Save and publish your site'
       ],
-      easy: 'If you don\'t see a Custom Code option, reply to your setup email and Eli will handle it directly.',
+      easy: 'If you do not see a Custom Code option, reply to your setup email and Eli will handle it directly.',
       loginNote: 'To give Eli access: go to My Account → Delegate Access → Grant Access. Enter netifybuilds@gmail.com.'
     },
     custom: {
