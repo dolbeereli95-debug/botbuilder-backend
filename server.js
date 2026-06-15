@@ -2504,23 +2504,23 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:fle
 .chat-label-dot{width:7px;height:7px;border-radius:50%;background:#7AAE6E;flex-shrink:0}
 .chat-messages{flex:1;display:flex;flex-direction:column;gap:12px;overflow-y:auto;margin-bottom:16px;min-height:180px;max-height:50dvh;-webkit-overflow-scrolling:touch}
 .msg{max-width:84%;padding:13px 17px;font-size:14.5px;line-height:1.65;word-wrap:break-word}
-.msg.bot{background:#F5EEE4;border-radius:4px 18px 18px 18px;align-self:flex-start;color:#1F2937;font-family:'Lora',Georgia,serif;font-weight:400}
+.msg.bot{background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px 18px 18px 18px;align-self:flex-start;color:#111827;font-family:'Lora',Georgia,serif;font-weight:400}
 .msg.user{background:var(--accent);color:#FFFDF9;border-radius:18px 4px 18px 18px;align-self:flex-end}
-.typing-wrap{align-self:flex-start;background:#F5EEE4;border-radius:4px 18px 18px 18px;padding:15px 18px;display:flex;gap:5px;align-items:center}
+.typing-wrap{align-self:flex-start;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px 18px 18px 18px;padding:15px 18px;display:flex;gap:5px;align-items:center}
 .typing-wrap span{width:6px;height:6px;border-radius:50%;background:#9CA3AF;display:inline-block;animation:bounce 1.2s infinite}
 .typing-wrap span:nth-child(2){animation-delay:0.2s}
 .typing-wrap span:nth-child(3){animation-delay:0.4s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-6px);opacity:1}}
 .input-wrap{background:#FFFDF9;padding-top:8px}
-.input-row{display:flex;gap:10px;align-items:flex-end;background:#F5EEE4;border:1.5px solid #E0D5C5;border-radius:14px;padding:10px 10px 10px 16px;transition:border-color 0.15s}
+.input-row{display:flex;gap:10px;align-items:flex-end;background:#F9FAFB;border:1.5px solid #E5E7EB;border-radius:14px;padding:10px 10px 10px 16px;transition:border-color 0.15s}
 .input-row:focus-within{border-color:var(--accent)}
 .chat-input{flex:1;border:none;background:transparent;font-size:16px;font-family:'Inter',sans-serif;color:#111827;outline:none;resize:none;min-height:24px;max-height:80px;line-height:1.5}
 .chat-input::placeholder{color:#9CA3AF}
 .send-btn{width:38px;height:38px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;-webkit-tap-highlight-color:transparent}
 .send-btn:active{opacity:0.8}
 .send-btn svg{width:15px;height:15px;stroke:#FFFDF9;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
-.end-btn{width:100%;margin-top:12px;padding:14px;border-radius:12px;background:transparent;border:1.5px solid #E0D5C5;font-family:'Lora',Georgia,serif;font-size:14px;font-weight:600;color:#6B7280;cursor:pointer;display:none;-webkit-tap-highlight-color:transparent}
-.end-btn:active{background:#F5EEE4}
+.end-btn{width:100%;margin-top:12px;padding:14px;border-radius:12px;background:transparent;border:1.5px solid #E5E7EB;font-family:'Lora',Georgia,serif;font-size:14px;font-weight:600;color:#6B7280;cursor:pointer;display:none;-webkit-tap-highlight-color:transparent}
+.end-btn:active{background:#F3F4F6}
 
 #thanksView{display:none;text-align:center;padding:16px 0;flex:1;flex-direction:column;justify-content:center;align-items:center}
 .thanks-circle{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
@@ -2546,11 +2546,11 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:fle
     <div id="rateView">
       <p class="stars-label">Tap a star to rate</p>
       <div class="stars">
-        <button class="star-btn" onclick="selectStar(1)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p1" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#E8DDD0;stroke:#C9B9A8;stroke-width:1;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
-        <button class="star-btn" onclick="selectStar(2)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p2" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#E8DDD0;stroke:#C9B9A8;stroke-width:1;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
-        <button class="star-btn" onclick="selectStar(3)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p3" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#E8DDD0;stroke:#C9B9A8;stroke-width:1;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
-        <button class="star-btn" onclick="selectStar(4)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p4" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#E8DDD0;stroke:#C9B9A8;stroke-width:1;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
-        <button class="star-btn" onclick="selectStar(5)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p5" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#E8DDD0;stroke:#C9B9A8;stroke-width:1;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+        <button class="star-btn" onclick="selectStar(1)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p1" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:transparent;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;transition:all 0.15s;opacity:0.4"/></svg></button>
+        <button class="star-btn" onclick="selectStar(2)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p2" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:transparent;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;transition:all 0.15s;opacity:0.4"/></svg></button>
+        <button class="star-btn" onclick="selectStar(3)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p3" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:transparent;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;transition:all 0.15s;opacity:0.4"/></svg></button>
+        <button class="star-btn" onclick="selectStar(4)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p4" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:transparent;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;transition:all 0.15s;opacity:0.4"/></svg></button>
+        <button class="star-btn" onclick="selectStar(5)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p5" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:transparent;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;transition:all 0.15s;opacity:0.4"/></svg></button>
       </div>
       <div class="star-labels"><span>Not what I hoped</span><span>Absolutely loved it</span></div>
       <div class="rating-msg" id="ratingMsg"></div>
@@ -2601,7 +2601,7 @@ function selectStar(rating) {
   for (var i = 1; i <= 5; i++) {
     var p = document.getElementById('p' + i);
     if (i <= rating) { p.style.fill = 'var(--accent)'; p.style.stroke = 'var(--accent)'; p.style.opacity = i === rating ? '1' : '0.75'; }
-    else { p.style.fill = '#E8DDD0'; p.style.stroke = '#C9B9A8'; p.style.opacity = '1'; }
+    else { p.style.fill = 'transparent'; p.style.stroke = 'var(--accent)'; p.style.opacity = '0.4'; }
   }
   document.getElementById('ratingMsg').textContent = ratingMsgs[rating] || '';
   document.getElementById('submitBtn').style.display = 'block';
