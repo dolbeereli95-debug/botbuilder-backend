@@ -2514,7 +2514,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
 .chat-input-row{display:flex;gap:8px;align-items:flex-end;}
 .chat-input{flex:1;border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;resize:none;min-height:44px;max-height:100px;line-height:1.4;color:var(--text);}
-.chat-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);}
+.chat-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,0.12);}
 .chat-send{width:40px;height:40px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;}
 .chat-send:hover{opacity:0.85;}
 .chat-send svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
@@ -2559,7 +2559,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
       <button class="star-btn" data-rating="5" onclick="selectStar(5)" aria-label="5 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
     </div>
     <div class="star-labels"><span>Not great</span><span>Loved it</span></div>
-    <button class="submit-btn" id="submitBtn" onclick="submitRating()">Share my experience →</button>
+    <button class="submit-btn" id="submitBtn" onclick="submitRating()" style="display:none;">Share my experience →</button>
   </div>
 
   <!-- Private chat view (1-3 stars) -->
