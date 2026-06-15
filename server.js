@@ -1135,7 +1135,7 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
             <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Next Steps</p>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
               ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? '<li>Send the widget install code above to the client or their web developer</li>' : ''}
-              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? '<li>Review filter is active — confirm their Google review link is correct in the client record</li>' : ''}
+              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? '<li>Review filter is active — confirm their Google review link is correct in the client record. Review link to send manually: <a href="https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '">https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '</a></li>' : ''}
               ${['campaign','bot_campaign','review_campaign','all'].includes(pkg) ? '<li>Request their customer list for reactivation campaigns</li>' : ''}
               <li>Client portal access code: <strong>${bizKey}</strong> — send this to the client</li>
               <li>Subscription starts when client hits Activate in their portal</li>
