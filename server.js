@@ -1135,12 +1135,20 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
             <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Next Steps</p>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
               ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? '<li>Send the widget install code above to the client or their web developer</li>' : ''}
-              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? '<li>Review filter is active — confirm their Google review link is correct in the client record. Review link to send manually: <a href="https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '">https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '</a></li>' : ''}
+              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? `<li>Review filter is active — confirm their Google review link is correct in the client record.<br>Review link: <a href="https://botbuilder-backend-production.up.railway.app/rate/${bizKey}">https://botbuilder-backend-production.up.railway.app/rate/${bizKey}</a></li>` : ''}
               ${['campaign','bot_campaign','review_campaign','all'].includes(pkg) ? '<li>Request their customer list for reactivation campaigns</li>' : ''}
               <li>Client portal access code: <strong>${bizKey}</strong> — send this to the client</li>
               <li>Subscription starts when client hits Activate in their portal</li>
             </ol>
           </div>
+          ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? `
+          <div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">
+            <p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>
+            <img src="https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent('https://botbuilder-backend-production.up.railway.app/rate/' + bizKey)}&choe=UTF-8" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;" />
+            <p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>
+            <p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code above and save it as an image to use in print materials.</p>
+          </div>
+          ` : ''}
           <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
         </div>`,
       }),
