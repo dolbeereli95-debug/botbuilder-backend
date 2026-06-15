@@ -1,4 +1,5 @@
 const express = require('express');
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const { OAuth2Client } = require('google-auth-library');
 const GOOGLE_CLIENT_ID = '968822994959-js3lra786sg48d1t29l5ju5kbio6h6m1.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -197,12 +198,21 @@ app.post('/chat', rateLimit, async (req, res) => {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
   }
-  // Check activation status
+  // Check activation status — allow trial messages if not yet activated
   if (bizKey) {
     const clientKey = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
     const client = clientInfo[clientKey];
     if (client && client.activated === false) {
-      return res.status(403).json({ error: 'Bot not yet activated. Please activate your bot in the client portal to go live.' });
+      const TRIAL_LIMIT = 7;
+      const used = client.trialMessagesUsed || 0;
+      if (used >= TRIAL_LIMIT) {
+        return res.status(403).json({ error: 'trial_exhausted' });
+      }
+      // Allow trial message — increment counter
+      client.trialMessagesUsed = used + 1;
+      debouncedSave('client_info.json', clientInfo);
+      // Flag response as trial so widget can show countdown
+      req._trialRemaining = TRIAL_LIMIT - (used + 1);
     }
   }
 
@@ -572,7 +582,13 @@ Never use markdown.${siteContext}`;
       }
     }
 
-    res.json({ reply });
+    // Inject trialRemaining if this was a trial message
+    const trialRemaining = req._trialRemaining;
+    if (typeof trialRemaining === 'number') {
+      res.json({ reply, trialRemaining });
+    } else {
+      res.json({ reply });
+    }
   } catch (err) {
     console.error('[Chat Error]', err.message);
     if (err.status === 401) return res.status(500).json({ error: 'API authentication failed' });
@@ -1433,40 +1449,113 @@ app.post('/register-client', (req, res) => {
   res.json({ success: true });
 });
 
+// Price IDs for each plan
+const STRIPE_PRICES = {
+  'bot':              'price_1TiMvnPVUoVHUfbhYE51rvZU',
+  'review':           'price_1TiMx4PVUoVHUfbhGe4VYiG2',
+  'campaign':         'price_1TiN2FPVUoVHUfbhjkiA37Ik',
+  'bot_review':       null, // bundle — handled manually for now
+  'all':              null, // bundle — handled manually for now
+};
+
 app.post('/activate-client', async (req, res) => {
   const { bizKey } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
   const key = bizKey.toLowerCase();
   if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
-  // Prevent activation if already activated
   if (clientInfo[key].activated) return res.json({ success: true, alreadyActivated: true });
 
-  // Don't mark as activated yet -- wait for Stripe payment confirmation
-  // Just notify Eli that the client is heading to Stripe
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'onboarding@netifybuilds.com',
-        to: 'dolbeereli95@gmail.com',
-        subject: '💳 Client heading to Stripe -- ' + (clientInfo[key].bizName || key),
-        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;">
-          <h2 style="color:#1d4ed8;margin-bottom:8px;">Client hitting Activate</h2>
-          <p style="color:#374151;font-size:14px;margin-bottom:16px;"><strong>${clientInfo[key].bizName || key}</strong> clicked Activate and is being sent to Stripe to pay.</p>
-          <div style="background:white;border-radius:8px;padding:14px;border:1px solid #e5e7eb;font-size:13px;color:#374151;">
-            <p><strong>Business:</strong> ${clientInfo[key].bizName || key}</p>
-            <p><strong>Email:</strong> ${clientInfo[key].email || 'Not on file'}</p>
-            <p><strong>Time:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET</p>
-            <p><strong>Plan:</strong> ${clientInfo[key].plan || 'Not specified'}</p>
-          </div>
-          <p style="color:#1d4ed8;font-size:13px;font-weight:600;margin-top:16px;">Bot will be marked active once Stripe confirms payment.</p>
-        </div>`
-      })
-    });
-  } catch(e) { console.error('[Activate email error]', e.message); }
+  const client = clientInfo[key];
+  const plan = client.plan || 'bot';
+  const priceId = STRIPE_PRICES[plan];
+  const BACKEND = 'https://botbuilder-backend-production.up.railway.app';
+
+  // If Stripe is configured and we have a price for this plan, create a checkout session
+  if (stripe && priceId) {
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        line_items: [{ price: priceId, quantity: 1 }],
+        customer_email: client.email || undefined,
+        metadata: { bizKey: key },
+        success_url: BACKEND + '/activation-success?bizKey=' + key + '&session_id={CHECKOUT_SESSION_ID}',
+        cancel_url: 'https://netifybuilds.com/portal?bizKey=' + key + '&cancelled=1',
+      });
+      // Notify Eli
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: 'dolbeereli95@gmail.com',
+          subject: '💳 Client heading to Stripe -- ' + (client.bizName || key),
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;">
+            <h2 style="color:#1d4ed8;margin-bottom:8px;">Client hitting Activate</h2>
+            <p style="color:#374151;font-size:14px;"><strong>${client.bizName || key}</strong> is being sent to Stripe checkout.</p>
+            <p style="color:#374151;font-size:13px;"><strong>Plan:</strong> ${plan} &nbsp;|&nbsp; <strong>Email:</strong> ${client.email || 'N/A'}</p>
+          </div>`
+        })
+      }).catch(() => {});
+      return res.json({ success: true, checkoutUrl: session.url });
+    } catch(e) {
+      console.error('[Stripe checkout error]', e.message);
+      return res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+  }
+
+  // Fallback if Stripe not configured or no price for plan
+  fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: 'onboarding@netifybuilds.com',
+      to: 'dolbeereli95@gmail.com',
+      subject: '💳 Client hitting Activate (manual) -- ' + (client.bizName || key),
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;">
+        <h2 style="color:#1d4ed8;margin-bottom:8px;">Manual activation needed</h2>
+        <p style="color:#374151;font-size:14px;"><strong>${client.bizName || key}</strong> clicked Activate. Stripe not configured for plan: ${plan}.</p>
+        <p style="color:#374151;font-size:13px;"><strong>Email:</strong> ${client.email || 'N/A'}</p>
+      </div>`
+    })
+  }).catch(() => {});
 
   res.json({ success: true, pendingPayment: true });
+});
+
+// Activation success redirect (after Stripe checkout)
+app.get('/activation-success', async (req, res) => {
+  const { bizKey, session_id } = req.query;
+  if (!bizKey || !session_id) return res.redirect('https://netifybuilds.com/portal');
+  const key = bizKey.toLowerCase();
+  if (!clientInfo[key]) return res.redirect('https://netifybuilds.com/portal');
+  // Verify session with Stripe
+  if (stripe) {
+    try {
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+      if (session.payment_status === 'paid' || session.status === 'complete') {
+        clientInfo[key].activated = true;
+        clientInfo[key].activatedAt = new Date().toISOString();
+        clientInfo[key].stripeCustomerId = session.customer;
+        clientInfo[key].stripeSubscriptionId = session.subscription;
+        debouncedSave('client_info.json', clientInfo);
+        // Notify Eli
+        fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: 'onboarding@netifybuilds.com',
+            to: 'dolbeereli95@gmail.com',
+            subject: '🟢 Payment confirmed -- ' + (clientInfo[key].bizName || key),
+            html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #86efac;">
+              <h2 style="color:#15803d;margin-bottom:8px;">Bot is now live</h2>
+              <p style="color:#374151;font-size:14px;"><strong>${clientInfo[key].bizName || key}</strong> paid via Stripe. Bot activated.</p>
+            </div>`
+          })
+        }).catch(() => {});
+      }
+    } catch(e) { console.error('[Activation success error]', e.message); }
+  }
+  res.redirect('https://netifybuilds.com/portal?bizKey=' + key + '&activated=1');
 });
 
 // ── TRIGGER-BASED REACTIVATION CAMPAIGNS ──
