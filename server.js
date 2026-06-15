@@ -2486,7 +2486,7 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 .header{padding:40px 28px 28px}
 .biz-label{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:14px;opacity:0.8}
 .headline{font-family:'Lora',Georgia,serif;font-size:1.9rem;font-weight:700;color:var(--accent);line-height:1.2;margin-bottom:12px;letter-spacing:-0.01em}
-.subline{font-size:15px;color:#6B5B4E;line-height:1.75}
+.subline{font-size:15px;color:#374151;line-height:1.75}
 .divider{height:1px;background:#EDE5D8;margin:0 28px}
 .body{flex:1;padding:28px 28px 36px;display:flex;flex-direction:column}
 .stars-label{font-size:12px;font-weight:600;color:var(--accent);letter-spacing:0.05em;text-align:center;margin-bottom:18px;opacity:0.7}
@@ -2500,11 +2500,11 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 .trust-note{text-align:center;font-size:12px;color:#C9B9A8;margin-top:16px;line-height:1.6}
 
 #chatView{display:none;flex:1;flex-direction:column}
-.chat-label{font-size:12px;font-weight:600;color:#A89880;letter-spacing:0.05em;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.chat-label{font-size:12px;font-weight:600;color:#374151;letter-spacing:0.05em;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .chat-label-dot{width:7px;height:7px;border-radius:50%;background:#7AAE6E;flex-shrink:0}
 .chat-messages{flex:1;display:flex;flex-direction:column;gap:12px;overflow-y:auto;margin-bottom:16px;min-height:180px;max-height:50dvh;-webkit-overflow-scrolling:touch}
 .msg{max-width:84%;padding:13px 17px;font-size:14.5px;line-height:1.65;word-wrap:break-word}
-.msg.bot{background:#F5EEE4;border-radius:4px 18px 18px 18px;align-self:flex-start;color:#2C1810;font-family:'Lora',Georgia,serif}
+.msg.bot{background:#F5EEE4;border-radius:4px 18px 18px 18px;align-self:flex-start;color:#1F2937;font-family:'Lora',Georgia,serif;font-weight:400}
 .msg.user{background:var(--accent);color:#FFFDF9;border-radius:18px 4px 18px 18px;align-self:flex-end}
 .typing-wrap{align-self:flex-start;background:#F5EEE4;border-radius:4px 18px 18px 18px;padding:15px 18px;display:flex;gap:5px;align-items:center}
 .typing-wrap span{width:6px;height:6px;border-radius:50%;background:#A89880;display:inline-block;animation:bounce 1.2s infinite}
@@ -2525,7 +2525,7 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 #thanksView{display:none;text-align:center;padding:16px 0;flex:1;flex-direction:column;justify-content:center;align-items:center}
 .thanks-circle{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
 .thanks-title{font-family:'Lora',Georgia,serif;font-size:1.5rem;font-weight:700;color:var(--accent);margin-bottom:12px;line-height:1.3}
-.thanks-sub{font-size:15px;color:#6B5B4E;line-height:1.75;margin-bottom:28px}
+.thanks-sub{font-size:15px;color:#374151;line-height:1.75;margin-bottom:28px}
 .google-btn{display:inline-flex;align-items:center;gap:10px;padding:15px 28px;background:#4285F4;color:white;border-radius:12px;text-decoration:none;font-family:'Lora',Georgia,serif;font-size:15px;font-weight:600;-webkit-tap-highlight-color:transparent}
 .google-btn:active{opacity:0.85}
 
