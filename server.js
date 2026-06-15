@@ -2474,133 +2474,145 @@ app.get('/rate/:bizKey', (req, res) => {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>How did we do? — ${bizName}</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--accent:${accentColor};--navy:#0A2540;--text:#0F172A;--soft:#64748B;--border:#E2E8F0;--off:#F8FAFC}
-body{font-family:'Inter',sans-serif;background:var(--off);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(rgba(59,130,246,0.04) 1px,transparent 1px);background-size:22px 22px;pointer-events:none;}
-.card{background:white;border-radius:24px;padding:40px 36px;max-width:420px;width:100%;box-shadow:0 4px 32px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);border:1px solid var(--border);position:relative;z-index:1;}
-@media(max-width:480px){.card{padding:28px 20px;border-radius:20px;}}
-.brand-bar{display:flex;align-items:center;gap:10px;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border);}
-.brand-icon{width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.brand-icon svg{width:20px;height:20px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
-.brand-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:800;color:var(--text);}
-.brand-sub{font-size:12px;color:var(--soft);}
-.question{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.3rem;font-weight:800;color:var(--text);margin-bottom:8px;letter-spacing:-0.02em;line-height:1.3;}
-.question-sub{font-size:14px;color:var(--soft);margin-bottom:32px;line-height:1.7;}
-.stars{display:flex;justify-content:center;gap:10px;margin-bottom:8px;}
-.star-btn{background:none;border:none;cursor:pointer;padding:6px;border-radius:12px;transition:transform 0.15s,background 0.15s;-webkit-tap-highlight-color:transparent;}
-.star-btn:hover{background:var(--off);transform:scale(1.1);}
-.star-btn svg{width:44px;height:44px;transition:all 0.15s;}
-.star-btn svg .star-fill{fill:#e2e8f0;transition:fill 0.15s;}
-.star-btn.active svg .star-fill{fill:#FBBF24;}
-.star-btn.active{transform:scale(1.12);}
-.star-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--soft);margin-bottom:24px;padding:0 6px;}
+:root{--accent:${accentColor};--text:#0F172A;--soft:#64748B;--border:#E2E8F0;--off:#F8FAFC;--radius:20px}
+html,body{height:100%;min-height:100dvh}
+body{font-family:'Inter',sans-serif;background:var(--off);color:var(--text);display:flex;flex-direction:column;min-height:100dvh}
 
-/* Chat interface */
-#chatView{display:none;}
-.chat-header{background:var(--accent);border-radius:14px 14px 0 0;padding:14px 18px;display:flex;align-items:center;gap:10px;margin:-40px -36px 0;margin-bottom:20px;}
-@media(max-width:480px){.chat-header{margin:-28px -20px 0;}}
-.chat-av{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.chat-av svg{width:18px;height:18px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
-.chat-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;color:white;}
-.chat-status{font-size:11px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:4px;}
-.chat-dot{width:5px;height:5px;border-radius:50%;background:#4ade80;}
-.chat-messages{display:flex;flex-direction:column;gap:10px;min-height:200px;max-height:320px;overflow-y:auto;margin-bottom:16px;padding:4px 0;}
-.msg{max-width:85%;padding:10px 14px;font-size:13.5px;line-height:1.55;word-wrap:break-word;}
-.msg.bot{background:var(--off);border:1px solid var(--border);border-radius:4px 16px 16px 16px;align-self:flex-start;color:var(--text);}
-.msg.user{background:var(--accent);color:white;border-radius:16px 4px 16px 16px;align-self:flex-end;}
-.typing{display:flex;gap:4px;align-items:center;padding:12px 14px;background:var(--off);border:1px solid var(--border);border-radius:4px 16px 16px 16px;align-self:flex-start;}
-.typing span{width:5px;height:5px;border-radius:50%;background:#94a3b8;animation:bounce 1.2s infinite;}
-.typing span:nth-child(2){animation-delay:0.2s}
-.typing span:nth-child(3){animation-delay:0.4s}
-@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
-.chat-input-row{display:flex;gap:8px;align-items:flex-end;}
-.chat-input{flex:1;border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;resize:none;min-height:44px;max-height:100px;line-height:1.4;color:var(--text);}
-.chat-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,0.12);}
-.chat-send{width:40px;height:40px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;}
-.chat-send:hover{opacity:0.85;}
-.chat-send svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
-.chat-end-btn{width:100%;margin-top:10px;padding:11px;border-radius:99px;background:var(--off);border:1.5px solid var(--border);font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;color:var(--soft);cursor:pointer;transition:all 0.15s;display:none;}
-.chat-end-btn:hover{border-color:var(--accent);color:var(--accent);}
+/* ── PAGE WRAPPER ── */
+.page{flex:1;display:flex;flex-direction:column;min-height:100dvh;max-width:520px;margin:0 auto;width:100%;padding:0 0 env(safe-area-inset-bottom)}
 
-/* Thanks view */
-#thanksView{display:none;text-align:center;padding:12px 0;}
-.thanks-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
-.thanks-icon svg{width:32px;height:32px;}
-.thanks-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.15rem;font-weight:800;color:var(--text);margin-bottom:8px;letter-spacing:-0.02em;}
-.thanks-sub{font-size:14px;color:var(--soft);line-height:1.6;margin-bottom:20px;}
-.google-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;background:#4285F4;color:white;border-radius:99px;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;transition:opacity 0.2s;}
-.google-btn:hover{opacity:0.9;}
-.google-btn svg{width:16px;height:16px;fill:white;}
+/* ── HEADER ── */
+.header{background:var(--accent);padding:28px 24px 32px;position:relative;overflow:hidden}
+.header::before{content:'';position:absolute;top:-60px;right:-60px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,0.06);pointer-events:none}
+.header::after{content:'';position:absolute;bottom:-40px;left:-20px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,0.04);pointer-events:none}
+.header-inner{position:relative;z-index:1}
+.biz-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.4rem;font-weight:800;color:white;margin-bottom:4px;letter-spacing:-0.02em}
+.biz-sub{font-size:13px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:6px}
+.biz-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.4)}
 
-.submit-btn{width:100%;padding:14px;border-radius:99px;background:var(--accent);color:white;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:opacity 0.2s;display:none;margin-top:8px;}
-.submit-btn:hover{opacity:0.88;}
-.poweredby{font-size:11px;color:#cbd5e1;text-align:center;margin-top:24px;}
+/* ── BODY ── */
+.body{flex:1;background:white;border-radius:var(--radius) var(--radius) 0 0;margin-top:-16px;padding:32px 24px 40px;display:flex;flex-direction:column}
+
+/* ── RATING VIEW ── */
+#rateView{}
+.question{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.5rem;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-0.025em;line-height:1.25}
+.question-sub{font-size:15px;color:var(--soft);line-height:1.7;margin-bottom:36px}
+.stars-wrap{margin-bottom:12px}
+.stars{display:flex;justify-content:center;gap:6px;margin-bottom:10px}
+.star-btn{background:none;border:none;cursor:pointer;padding:6px;border-radius:14px;transition:transform 0.15s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.star-btn:active{transform:scale(0.92)}
+.star-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--soft);font-weight:500;padding:0 6px}
+.submit-btn{width:100%;padding:16px;border-radius:99px;background:var(--accent);color:white;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;cursor:pointer;margin-top:24px;transition:opacity 0.2s;-webkit-tap-highlight-color:transparent}
+.submit-btn:active{opacity:0.85}
+.trust-row{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:20px}
+.trust-item{display:flex;align-items:center;gap:5px;font-size:12px;color:#94A3B8}
+.trust-item svg{width:13px;height:13px;stroke:#94A3B8;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* ── CHAT VIEW ── */
+#chatView{display:none;flex:1;flex-direction:column}
+.chat-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--soft);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.chat-label::before{content:'';width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.chat-messages{flex:1;display:flex;flex-direction:column;gap:12px;overflow-y:auto;margin-bottom:16px;min-height:200px;max-height:55dvh;-webkit-overflow-scrolling:touch}
+.msg{max-width:82%;padding:12px 16px;font-size:14.5px;line-height:1.6;word-wrap:break-word}
+.msg.bot{background:var(--off);border:1px solid var(--border);border-radius:6px 18px 18px 18px;align-self:flex-start;color:var(--text)}
+.msg.user{background:var(--accent);color:white;border-radius:18px 6px 18px 18px;align-self:flex-end}
+.typing-wrap{align-self:flex-start;background:var(--off);border:1px solid var(--border);border-radius:6px 18px 18px 18px;padding:14px 18px;display:flex;gap:5px;align-items:center}
+.typing-wrap span{width:6px;height:6px;border-radius:50%;background:#94a3b8;display:inline-block;animation:bounce 1.2s infinite}
+.typing-wrap span:nth-child(2){animation-delay:0.2s}
+.typing-wrap span:nth-child(3){animation-delay:0.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-6px);opacity:1}}
+.chat-input-area{background:white;padding-top:8px}
+.chat-input-row{display:flex;gap:10px;align-items:flex-end;background:var(--off);border:1.5px solid var(--border);border-radius:16px;padding:10px 10px 10px 16px;transition:border-color 0.15s}
+.chat-input-row:focus-within{border-color:var(--accent)}
+.chat-input{flex:1;border:none;background:transparent;font-size:16px;font-family:inherit;color:var(--text);outline:none;resize:none;min-height:24px;max-height:80px;line-height:1.5}
+.chat-input::placeholder{color:#94a3b8}
+.chat-send{width:38px;height:38px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;-webkit-tap-highlight-color:transparent}
+.chat-send:active{opacity:0.8}
+.chat-send svg{width:15px;height:15px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.chat-end-btn{width:100%;margin-top:12px;padding:13px;border-radius:99px;background:white;border:1.5px solid var(--border);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;color:var(--soft);cursor:pointer;display:none;transition:all 0.15s;-webkit-tap-highlight-color:transparent}
+.chat-end-btn:active{background:var(--off)}
+
+/* ── THANKS VIEW ── */
+#thanksView{display:none;text-align:center;padding:20px 0;flex:1;justify-content:center;align-items:center;flex-direction:column}
+.thanks-icon-wrap{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
+.thanks-icon-wrap svg{width:36px;height:36px}
+.thanks-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.35rem;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-0.02em;line-height:1.3}
+.thanks-sub{font-size:15px;color:var(--soft);line-height:1.7;margin-bottom:28px}
+.google-btn{display:inline-flex;align-items:center;gap:10px;padding:15px 28px;background:#4285F4;color:white;border-radius:99px;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;transition:opacity 0.2s}
+.google-btn:active{opacity:0.85}
+.google-btn svg{width:18px;height:18px}
+
+/* ── FOOTER ── */
+.footer{padding:16px 24px;text-align:center;font-size:11px;color:#CBD5E1;background:white}
 </style>
 </head>
 <body>
-<div class="card">
-  <!-- Rating view -->
-  <div id="rateView">
-    <div class="brand-bar">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      </div>
-      <div>
-        <div class="brand-name">${bizName}</div>
-        <div class="brand-sub">Share your experience</div>
-      </div>
+<div class="page">
+
+  <div class="header">
+    <div class="header-inner">
+      <div class="biz-name">${bizName}</div>
+      <div class="biz-sub"><div class="biz-dot"></div>${customerName ? 'Hi ' + customerName + ', thanks for your time' : 'Share your experience'}</div>
     </div>
-    <div class="question">${customerName ? 'Hi ' + customerName + ' — how did we do?' : 'How was your experience?'}</div>
-    <p class="question-sub">Your feedback means a lot to us. Tap a star to share how we did — it only takes a second.</p>
-    <div class="stars" id="starsRow">
-      <button class="star-btn" data-rating="1" onclick="selectStar(1)" aria-label="1 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
-      <button class="star-btn" data-rating="2" onclick="selectStar(2)" aria-label="2 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
-      <button class="star-btn" data-rating="3" onclick="selectStar(3)" aria-label="3 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
-      <button class="star-btn" data-rating="4" onclick="selectStar(4)" aria-label="4 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
-      <button class="star-btn" data-rating="5" onclick="selectStar(5)" aria-label="5 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
-    </div>
-    <div class="star-labels"><span>Not great</span><span>Loved it</span></div>
-    <button class="submit-btn" id="submitBtn" onclick="submitRating()" style="display:none;">Share my experience →</button>
   </div>
 
-  <!-- Private chat view (1-3 stars) -->
-  <div id="chatView">
-    <div class="chat-header">
-      <div class="chat-av">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <div class="body">
+
+    <!-- RATING VIEW -->
+    <div id="rateView">
+      <div class="question">${customerName ? 'How did we do,' : 'How was your'}<br>${customerName ? customerName + '?' : 'experience?'}</div>
+      <p class="question-sub">Your honest feedback helps us improve. Tap a star — it only takes a second and means a lot to our team.</p>
+      <div class="stars-wrap">
+        <div class="stars">
+          <button class="star-btn" onclick="selectStar(1)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p1" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.2;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+          <button class="star-btn" onclick="selectStar(2)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p2" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.2;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+          <button class="star-btn" onclick="selectStar(3)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p3" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.2;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+          <button class="star-btn" onclick="selectStar(4)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p4" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.2;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+          <button class="star-btn" onclick="selectStar(5)"><svg width="52" height="52" viewBox="0 0 24 24"><polygon id="p5" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.2;stroke-linejoin:round;transition:all 0.15s"/></svg></button>
+        </div>
+        <div class="star-labels"><span>Not great</span><span>Loved it</span></div>
       </div>
-      <div>
-        <div class="chat-title">${bizName} — Private Feedback</div>
-        <div class="chat-status"><div class="chat-dot"></div>Confidential · Not posted publicly</div>
+      <button class="submit-btn" id="submitBtn" onclick="submitRating()" style="display:none;">Share my experience →</button>
+      <div class="trust-row">
+        <div class="trust-item"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Private &amp; secure</div>
+        <div class="trust-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Takes 30 seconds</div>
       </div>
     </div>
-    <div class="chat-messages" id="chatMessages"></div>
-    <div class="chat-input-row">
-      <textarea class="chat-input" id="chatInput" placeholder="Type your message..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button class="chat-send" onclick="sendChatMsg()">
-        <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-      </button>
+
+    <!-- CHAT VIEW -->
+    <div id="chatView" style="display:none;flex:1;flex-direction:column;">
+      <div class="chat-label">Private feedback — not posted publicly</div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-area">
+        <div class="chat-input-row">
+          <textarea class="chat-input" id="chatInput" placeholder="Share what happened..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="chat-send" onclick="sendChatMsg()">
+            <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <button class="chat-end-btn" id="chatEndBtn" onclick="endChat()">I am done — submit my feedback</button>
+      </div>
     </div>
-    <button class="chat-end-btn" id="chatEndBtn" onclick="endChat()">Done — submit my feedback</button>
+
+    <!-- THANKS VIEW -->
+    <div id="thanksView" style="display:none;text-align:center;padding:20px 0;">
+      <div class="thanks-icon-wrap" id="thanksIconWrap"></div>
+      <div class="thanks-title" id="thanksTitle"></div>
+      <p class="thanks-sub" id="thanksSub"></p>
+      <a href="${googleLink}" class="google-btn" id="googleBtn" style="display:none;">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Leave a Google Review
+      </a>
+    </div>
+
   </div>
 
-  <!-- Thanks view -->
-  <div id="thanksView">
-    <div class="thanks-icon" id="thanksIconWrap"></div>
-    <div class="thanks-title" id="thanksTitle"></div>
-    <p class="thanks-sub" id="thanksSub"></p>
-    <a href="${googleLink}" class="google-btn" id="googleBtn" style="display:none;">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-      Leave a Google Review ⭐
-    </a>
-  </div>
-
-  <div class="poweredby">Powered by Netify Builds</div>
+  <div class="footer">Powered by Netify Builds</div>
 </div>
 
 <script>
@@ -2616,17 +2628,16 @@ var msgCount = 0;
 
 function selectStar(rating) {
   selectedRating = rating;
-  document.querySelectorAll('.star-btn').forEach(function(btn) {
-    var r = parseInt(btn.getAttribute('data-rating'));
-    var poly = btn.querySelector('polygon');
-    if (r <= rating) {
-      btn.style.transform = 'scale(1.12)';
-      if (poly) { poly.style.fill = '#FBBF24'; poly.style.stroke = '#F59E0B'; }
+  for (var i = 1; i <= 5; i++) {
+    var p = document.getElementById('p' + i);
+    if (i <= rating) {
+      p.style.fill = '#FBBF24';
+      p.style.stroke = '#F59E0B';
     } else {
-      btn.style.transform = '';
-      if (poly) { poly.style.fill = '#e2e8f0'; poly.style.stroke = '#cbd5e1'; }
+      p.style.fill = '#e2e8f0';
+      p.style.stroke = '#cbd5e1';
     }
-  });
+  }
   document.getElementById('submitBtn').style.display = 'block';
 }
 
@@ -2635,9 +2646,7 @@ async function submitRating() {
   var btn = document.getElementById('submitBtn');
   btn.textContent = 'Loading...';
   btn.disabled = true;
-
   if (selectedRating >= 4) {
-    // Log positive and show Google redirect
     try {
       await fetch(BACKEND + '/review-feedback', {
         method: 'POST',
@@ -2647,9 +2656,10 @@ async function submitRating() {
     } catch(e) {}
     showThanks(true);
   } else {
-    // Launch private chatbot
     document.getElementById('rateView').style.display = 'none';
-    document.getElementById('chatView').style.display = 'block';
+    var cv = document.getElementById('chatView');
+    cv.style.display = 'flex';
+    cv.style.flexDirection = 'column';
     setTimeout(function() { startFeedbackChat(); }, 300);
   }
 }
@@ -2659,22 +2669,20 @@ function showThanks(isPositive) {
   document.getElementById('chatView').style.display = 'none';
   var tv = document.getElementById('thanksView');
   tv.style.display = 'block';
-
   if (isPositive) {
-    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" style="width:32px;height:32px;"><circle cx="12" cy="12" r="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" width="36" height="36"><circle cx="12" cy="12" r="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
     document.getElementById('thanksIconWrap').style.background = '#dcfce7';
-    document.getElementById('thanksTitle').textContent = 'That made our day — thank you!';
-    document.getElementById('thanksSub').textContent = 'Would you mind taking 30 seconds to share your experience on Google? It helps other families find us and means the world to our team.';
+    document.getElementById('thanksTitle').textContent = 'That made our day!';
+    document.getElementById('thanksSub').textContent = 'Would you mind sharing that on Google? It takes 30 seconds and helps other people find us.';
     if (GOOGLE_LINK) document.getElementById('googleBtn').style.display = 'inline-flex';
   } else {
-    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" style="width:32px;height:32px;"><circle cx="12" cy="12" r="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#2563eb" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" width="36" height="36"><circle cx="12" cy="12" r="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#2563eb" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
     document.getElementById('thanksIconWrap').style.background = '#dbeafe';
-    document.getElementById('thanksTitle').textContent = 'Thank you for the feedback.';
-    document.getElementById('thanksSub').textContent = 'We take every experience seriously. This has been shared privately with the team and we will use it to do better.';
+    document.getElementById('thanksTitle').textContent = 'Thank you for telling us.';
+    document.getElementById('thanksSub').textContent = 'We are sorry we fell short. Your feedback goes directly to the owner and will be used to make things right.';
   }
 }
 
-// ── PRIVATE CHATBOT ──
 function addMsg(text, role) {
   var div = document.createElement('div');
   div.className = 'msg ' + role;
@@ -2682,16 +2690,12 @@ function addMsg(text, role) {
   var container = document.getElementById('chatMessages');
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
-  if (role === 'user') {
-    chatMessages.push({ role: 'user', content: text });
-  } else {
-    chatMessages.push({ role: 'assistant', content: text });
-  }
+  chatMessages.push({ role: role === 'user' ? 'user' : 'assistant', content: text });
 }
 
 function showTyping() {
   var div = document.createElement('div');
-  div.className = 'typing';
+  div.className = 'typing-wrap';
   div.id = 'typingIndicator';
   div.innerHTML = '<span></span><span></span><span></span>';
   var container = document.getElementById('chatMessages');
@@ -2702,28 +2706,21 @@ function showTyping() {
 
 async function startFeedbackChat() {
   var typing = showTyping();
-  var systemPrompt = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. Your job is to understand what went wrong in a warm, non-defensive way. Ask one question at a time. Start by acknowledging the rating and asking what happened. Then ask follow-up questions to understand the root cause — what specifically went wrong, whether they were contacted, and whether anything could have been done to fix it. After 3-4 exchanges, thank them sincerely and let them know their feedback has been shared with the team privately and will be used to improve. Keep responses short, warm, and human. Never be defensive or make excuses. Never ask for their name or contact info.';
-  
+  var sp = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. Acknowledge the rating warmly and ask what happened — one question only. Then ask 2-3 follow-up questions to understand the root cause. After 3-4 exchanges thank them sincerely and let them know their feedback has been shared privately with the owner. Keep responses short and human. Never be defensive. Do not collect contact info. Do not output LEAD_CAPTURED.';
   try {
     var res = await fetch(BACKEND + '/chat', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: 'I left a ' + selectedRating + ' star rating.' }],
-        systemPrompt: systemPrompt,
-        bizKey: BIZ_KEY,
-        isAdminSession: false,
-        chatType: 'review_feedback'
-      })
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'I just gave ' + selectedRating + ' stars.' }], systemPrompt: sp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' })
     });
     var data = await res.json();
     try { typing.remove(); } catch(e) {}
-    var reply = (data && data.reply) || 'Thank you for taking the time to share your experience. Could you tell me a little about what happened?';
+    var reply = (data && data.reply) || 'Thank you for taking the time. Can you tell me what happened?';
     addMsg(reply, 'bot');
     chatMessages = [{ role: 'assistant', content: reply }];
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
-    addMsg('Thank you for the rating. Could you tell me a little about what happened?', 'bot');
+    addMsg('Thank you for the rating. Can you tell me what happened?', 'bot');
   }
 }
 
@@ -2735,37 +2732,23 @@ async function sendChatMsg() {
   input.style.height = 'auto';
   addMsg(text, 'user');
   msgCount++;
-
-  if (msgCount >= 4) {
-    document.getElementById('chatEndBtn').style.display = 'block';
-  }
-
+  if (msgCount >= 3) document.getElementById('chatEndBtn').style.display = 'block';
   var typing = showTyping();
-  var systemPrompt = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the conversation warmly. Ask follow-up questions to understand what went wrong. After 3-4 exchanges total, thank them sincerely and let them know their feedback has been shared with the team privately. Keep responses short and human. Never be defensive.';
-
+  var sp = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the conversation warmly. Ask follow-up questions to understand what went wrong. After 3-4 exchanges total, thank them sincerely and let them know their feedback has been shared privately. Keep responses short and human. Never be defensive. Do not collect contact info. Do not output LEAD_CAPTURED.';
   try {
+    var msgs = chatMessages.slice(-8);
+    while (msgs.length > 0 && msgs[0].role !== 'user') msgs = msgs.slice(1);
+    if (msgs.length === 0) msgs = [{ role: 'user', content: text }];
     var res = await fetch(BACKEND + '/chat', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        messages: (function() {
-          var msgs = chatMessages.slice(-8);
-          // Anthropic requires first message to be user role
-          while (msgs.length > 0 && msgs[0].role !== 'user') msgs = msgs.slice(1);
-          return msgs.length > 0 ? msgs : [{ role: 'user', content: text }];
-        })(),
-        systemPrompt: systemPrompt,
-        bizKey: BIZ_KEY,
-        isAdminSession: false,
-        chatType: 'review_feedback'
-      })
+      body: JSON.stringify({ messages: msgs, systemPrompt: sp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' })
     });
     var data = await res.json();
     try { typing.remove(); } catch(e) {}
-    var reply = (data && data.reply) || 'Thank you for sharing that with us.';
-    // Strip any LEAD_CAPTURED triggers just in case
+    var reply = (data && data.reply) || 'Thank you for sharing that.';
     if (reply.indexOf('LEAD_CAPTURED|') !== -1) { reply = reply.substring(0, reply.indexOf('LEAD_CAPTURED|')).trim(); }
-    if (!reply) reply = 'Thank you for sharing that with us.';
+    if (!reply) reply = 'Thank you for sharing that.';
     addMsg(reply, 'bot');
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
@@ -2778,51 +2761,29 @@ async function endChat() {
   chatDone = true;
   document.getElementById('chatInput').disabled = true;
   document.getElementById('chatEndBtn').disabled = true;
-
-  // Log the conversation and feedback
   var fullConversation = chatMessages.map(function(m) { return m.content; }).join(' | ');
   try {
     await fetch(BACKEND + '/review-feedback', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        bizKey: BIZ_KEY,
-        rating: selectedRating,
-        feedback: fullConversation,
-        customerName: CUSTOMER_NAME,
-        conversation: chatMessages
-      })
+      body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: fullConversation, customerName: CUSTOMER_NAME, conversation: chatMessages })
     });
-    // Also log to conversation inbox
     await fetch(BACKEND + '/log-conversation', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        bizKey: BIZ_KEY,
-        bizName: BIZ_NAME,
-        messages: chatMessages,
-        leadCaptured: false,
-        leadName: CUSTOMER_NAME || 'Review Feedback (' + selectedRating + ' stars)',
-        leadPhone: '',
-        leadJobType: selectedRating + '-star review feedback',
-        timestamp: new Date().toISOString()
-      })
+      body: JSON.stringify({ bizKey: BIZ_KEY, bizName: BIZ_NAME, messages: chatMessages, leadCaptured: false, leadName: CUSTOMER_NAME || 'Review Feedback (' + selectedRating + ' stars)', leadPhone: '', leadJobType: selectedRating + '-star review feedback', timestamp: new Date().toISOString() })
     });
   } catch(e) {}
-
   showThanks(false);
 }
 
 function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendChatMsg();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMsg(); }
 }
 
 function autoResize(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 80) + 'px';
 }
 </script>
 </body>
