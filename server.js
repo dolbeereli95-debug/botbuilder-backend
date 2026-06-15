@@ -1249,6 +1249,8 @@ app.post('/signup', async (req, res) => {
        botName: botName || (bizName + ' Assistant'),
        botColor: botColor || '#0A2540',
        reviewColor: reviewColor || botColor || '#0A2540',
+       crmType: req.body.crmType || '',
+       autoSend: req.body.autoSend === true || req.body.autoSend === 'true',
        services: services || '',
        hours: hours || '',
        area: area || '',
@@ -2518,6 +2520,72 @@ var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. Mind
 </html>`);
 
   } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+});
+
+// ── CRM WEBHOOK — fires review SMS when job is completed ──
+// Works with Zapier, Housecall Pro, Jobber, Google Sheets, or any POST trigger
+// Required fields: bizKey, customerName, customerPhone
+// Optional: jobType, delayMinutes (default 30)
+app.post('/crm-webhook/:bizKey', async (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client = clientInfo[key];
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    if (!client.activated) return res.status(403).json({ error: 'Client not activated' });
+
+    // Accept fields from various CRM formats
+    const customerName = req.body.customerName || req.body.customer_name || req.body.name || req.body.contact_name || '';
+    const customerPhone = req.body.customerPhone || req.body.customer_phone || req.body.phone || req.body.mobile || req.body.contact_phone || '';
+    const jobType = req.body.jobType || req.body.job_type || req.body.service || req.body.job_title || '';
+    const delayMinutes = parseInt(req.body.delayMinutes || req.body.delay_minutes || '30') || 30;
+
+    if (!customerPhone) return res.status(400).json({ error: 'customerPhone is required' });
+
+    const bizName = client.bizName || key;
+    const firstName = customerName ? customerName.split(' ')[0] : 'there';
+    const rateLink = 'https://botbuilder-backend-production.up.railway.app/rate/' + key + (customerName ? '?name=' + encodeURIComponent(firstName) : '');
+    const message = 'Hey ' + firstName + '! Thanks for choosing ' + bizName + '. Mind leaving us a quick review? It only takes a minute: ' + rateLink;
+
+    console.log('[CRM Webhook] Job completed for', bizName, '— scheduling review SMS in', delayMinutes, 'mins to', customerPhone);
+
+    // Fire after delay
+    setTimeout(async function() {
+      try {
+        const response = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            From: process.env.TWILIO_PHONE_NUMBER,
+            To: normalizePhone(customerPhone) || customerPhone,
+            Body: message + '\n\nReply STOP to opt out.'
+          }).toString()
+        });
+        const data = await response.json();
+        if (data.error_code) throw new Error(data.message);
+        console.log('[CRM Webhook] Review SMS sent to', customerPhone, 'for', bizName);
+
+        // Store SMS session for two-way flow
+        smsSessionStore[customerPhone] = {
+          bizKey: key,
+          bizName: bizName,
+          customerName: customerName,
+          googleReviewLink: client.googleReviewLink || '',
+          waitingForReview: true,
+          timestamp: Date.now()
+        };
+      } catch(e) {
+        console.error('[CRM Webhook] SMS failed:', e.message);
+      }
+    }, delayMinutes * 60 * 1000);
+
+    res.json({ success: true, message: 'Review SMS scheduled in ' + delayMinutes + ' minutes', customer: customerName, phone: customerPhone });
+  } catch(e) {
+    console.error('[CRM Webhook Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── REVIEW RATING PAGE ──
