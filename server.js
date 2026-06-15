@@ -1100,12 +1100,12 @@ app.post('/signup', async (req, res) => {
     try {
       const reviewUrl = 'https://botbuilder-backend-production.up.railway.app/rate/' + bizKey;
       const qrDataUrl = await QRCode.toDataURL(reviewUrl, { width: 200, margin: 2, color: { dark: '#0A2540', light: '#FFFFFF' } });
-      qrCodeHtml = \`<div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">
-        <p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>
-        <img src="\${qrDataUrl}" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;border-radius:8px;" />
-        <p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>
-        <p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code and save as image to use in print materials.</p>
-      </div>\`;
+      qrCodeHtml = '<div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">'
+        + '<p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>'
+        + '<img src="' + qrDataUrl + '" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;border-radius:8px;" />'
+        + '<p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>'
+        + '<p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code and save as image to use in print materials.</p>'
+        + '</div>';
     } catch(e) { console.error('[QR Error]', e.message); }
   }
 
