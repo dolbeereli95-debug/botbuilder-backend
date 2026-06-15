@@ -2552,11 +2552,11 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
     <div class="question">${customerName ? 'Hi ' + customerName + ' — how did we do?' : 'How was your experience?'}</div>
     <p class="question-sub">Your feedback means a lot to us. Tap a star to share how we did — it only takes a second.</p>
     <div class="stars" id="starsRow">
-      <button class="star-btn" data-rating="1" onclick="selectStar(1)" aria-label="1 star"><svg viewBox="0 0 24 24"><polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-      <button class="star-btn" data-rating="2" onclick="selectStar(2)" aria-label="2 star"><svg viewBox="0 0 24 24"><polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-      <button class="star-btn" data-rating="3" onclick="selectStar(3)" aria-label="3 star"><svg viewBox="0 0 24 24"><polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-      <button class="star-btn" data-rating="4" onclick="selectStar(4)" aria-label="4 star"><svg viewBox="0 0 24 24"><polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-      <button class="star-btn" data-rating="5" onclick="selectStar(5)" aria-label="5 star"><svg viewBox="0 0 24 24"><polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+      <button class="star-btn" data-rating="1" onclick="selectStar(1)" aria-label="1 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
+      <button class="star-btn" data-rating="2" onclick="selectStar(2)" aria-label="2 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
+      <button class="star-btn" data-rating="3" onclick="selectStar(3)" aria-label="3 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
+      <button class="star-btn" data-rating="4" onclick="selectStar(4)" aria-label="4 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
+      <button class="star-btn" data-rating="5" onclick="selectStar(5)" aria-label="5 star"><svg viewBox="0 0 24 24" width="44" height="44"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" style="fill:#e2e8f0;stroke:#cbd5e1;stroke-width:1.5;stroke-linejoin:round;transition:fill 0.15s,stroke 0.15s;"/></svg></button>
     </div>
     <div class="star-labels"><span>Not great</span><span>Loved it</span></div>
     <button class="submit-btn" id="submitBtn" onclick="submitRating()">Share my experience →</button>
@@ -2612,7 +2612,14 @@ function selectStar(rating) {
   selectedRating = rating;
   document.querySelectorAll('.star-btn').forEach(function(btn) {
     var r = parseInt(btn.getAttribute('data-rating'));
-    btn.classList.toggle('active', r <= rating);
+    var poly = btn.querySelector('polygon');
+    if (r <= rating) {
+      btn.style.transform = 'scale(1.12)';
+      if (poly) { poly.style.fill = '#FBBF24'; poly.style.stroke = '#F59E0B'; }
+    } else {
+      btn.style.transform = '';
+      if (poly) { poly.style.fill = '#e2e8f0'; poly.style.stroke = '#cbd5e1'; }
+    }
   });
   document.getElementById('submitBtn').style.display = 'block';
 }
