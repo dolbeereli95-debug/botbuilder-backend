@@ -226,6 +226,10 @@ app.post('/chat', rateLimit, async (req, res) => {
       resolvedPrompt = storedClient.systemPrompt;
     }
   }
+  // For review feedback chat, use a default prompt if none provided
+  if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && chatType === 'review_feedback') {
+    resolvedPrompt = 'You are a private, empathetic feedback assistant. A customer left a low star rating. Ask warmly what went wrong, one question at a time. After 3-4 exchanges thank them and let them know their feedback has been shared privately with the owner. Keep responses short and human. Never be defensive.';
+  }
   if (!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) {
     return res.status(400).json({ error: 'systemPrompt is required' });
   }
