@@ -2540,15 +2540,21 @@ app.get('/rate/:bizKey', (req, res) => {
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--accent:${accentColor}}
 html,body{height:100%;min-height:100dvh}
-body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:flex;flex-direction:column;min-height:100dvh}
-.page{flex:1;display:flex;flex-direction:column;min-height:100dvh;max-width:480px;margin:0 auto;width:100%;background:#FFFDF9}
-.header{padding:40px 28px 28px}
-.biz-label{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:14px;opacity:0.8}
-.headline{font-family:'Lora',Georgia,serif;font-size:1.9rem;font-weight:700;color:var(--accent);line-height:1.2;margin-bottom:12px;letter-spacing:-0.01em}
-.subline{font-size:15px;color:#374151;line-height:1.75}
-.divider{height:1px;background:#EDE5D8;margin:0 28px}
+body{font-family:'Inter',sans-serif;background:#F3F4F6;color:#111827;display:flex;flex-direction:column;min-height:100dvh}
+.page{flex:1;display:flex;flex-direction:column;min-height:100dvh;max-width:480px;margin:0 auto;width:100%;background:#FEFEFE}
+.header{background:var(--accent);padding:32px 24px 28px;position:relative;overflow:hidden;flex-shrink:0}
+.header::before{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,0.08) 1px,transparent 1px);background-size:18px 18px;pointer-events:none}
+.header-orb1{position:absolute;top:-40px;right:-30px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,0.07)}
+.header-orb2{position:absolute;bottom:-30px;left:-10px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.05)}
+.header-inner{position:relative;z-index:1}
+.biz-label{font-size:11px;font-weight:600;color:rgba(255,255,255,0.6);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px}
+.headline{font-family:'Lora',Georgia,serif;font-size:1.7rem;font-weight:700;color:white;line-height:1.2;margin-bottom:10px;letter-spacing:-0.01em}
+.subline{font-size:14px;color:rgba(255,255,255,0.72);line-height:1.7}
+.wave{height:10px;position:relative;flex-shrink:0;background:var(--accent)}
+.wave svg{position:absolute;bottom:0;left:0;width:100%;height:10px}
+.divider{height:1px;background:#E5E7EB;margin:0 24px}
 .body{flex:1;padding:28px 28px 36px;display:flex;flex-direction:column}
-.stars-label{font-size:12px;font-weight:600;color:var(--accent);letter-spacing:0.05em;text-align:center;margin-bottom:18px;opacity:0.7}
+.stars-label{font-size:12px;font-weight:600;color:#6B7280;letter-spacing:0.06em;text-align:center;margin-bottom:20px;text-transform:uppercase}
 .stars{display:flex;justify-content:center;gap:6px;margin-bottom:10px}
 .star-btn{background:none;border:none;cursor:pointer;padding:4px;border-radius:8px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform 0.12s}
 .star-btn:active{transform:scale(0.9)}
@@ -2588,17 +2594,21 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:fle
 .google-btn{display:inline-flex;align-items:center;gap:10px;padding:15px 28px;background:#4285F4;color:white;border-radius:12px;text-decoration:none;font-family:'Lora',Georgia,serif;font-size:15px;font-weight:600;-webkit-tap-highlight-color:transparent}
 .google-btn:active{opacity:0.85}
 
-.footer{padding:18px 28px;border-top:1px solid #EDE5D8;text-align:center;font-size:11px;color:#9CA3AF;background:#FFFDF9}
+.footer{padding:18px 28px;border-top:1px solid #E5E7EB;text-align:center;font-size:11px;color:#9CA3AF;background:#FEFEFE}
 </style>
 </head>
 <body>
 <div class="page">
   <div class="header">
-    <div class="biz-label">${bizName}</div>
-    <div class="headline">${customerName ? 'How did we do,<br>' + customerName + '?' : 'How was your<br>experience?'}</div>
-    <p class="subline">We genuinely want to know. Your honest feedback — good or bad — helps us take better care of the next person.</p>
+    <div class="header-orb1"></div>
+    <div class="header-orb2"></div>
+    <div class="header-inner">
+      <div class="biz-label">${bizName}</div>
+      <div class="headline">${customerName ? 'How did we do,<br>' + customerName + '?' : 'How was your<br>experience?'}</div>
+      <p class="subline">We genuinely want to know. Your honest feedback helps us take better care of the next person.</p>
+    </div>
   </div>
-  <div class="divider"></div>
+  <div class="wave"><svg viewBox="0 0 400 10" preserveAspectRatio="none"><path d="M0 0 Q100 10 200 5 Q300 0 400 10 L400 10 L0 10Z" fill="#FEFEFE"/></svg></div>
 
   <div class="body">
 
