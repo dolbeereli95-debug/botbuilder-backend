@@ -1104,13 +1104,13 @@ app.post('/signup', async (req, res) => {
   const hasReviewInPlan = ['review','bundle','bot_review','review_campaign','all'].includes(pkg);
   if (hasReviewInPlan) {
     try {
-      const reviewUrl = 'https://botbuilder-backend-production.up.railway.app/rate/' + bizKey;
-      const qrDataUrl = await QRCode.toDataURL(reviewUrl, { width: 200, margin: 2, color: { dark: '#0A2540', light: '#FFFFFF' } });
+      // QR served via /qr/:bizKey endpoint instead of inline base64
+      const qrUrl = 'https://botbuilder-backend-production.up.railway.app/qr/' + bizKey;
       qrCodeHtml = '<div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">'
         + '<p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>'
-        + '<img src="' + qrDataUrl + '" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;border-radius:8px;" />'
+        + '<img src="' + qrUrl + '" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;border-radius:8px;" />'
         + '<p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>'
-        + '<p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code and save as image to use in print materials.</p>'
+        + '<p style="color:#94a3b8;font-size:11px;margin:8px 0 0;"><a href="' + qrUrl + '" style="color:#2563eb;">Click here to download the QR code image</a></p>'
         + '</div>';
     } catch(e) { console.error('[QR Error]', e.message); }
   }
@@ -2727,6 +2727,20 @@ function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(e
 </body>
 </html>`);
 });
+// ── QR CODE IMAGE ENDPOINT ──
+app.get('/qr/:bizKey', async (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const reviewUrl = 'https://botbuilder-backend-production.up.railway.app/rate/' + key;
+  try {
+    const qrBuffer = await QRCode.toBuffer(reviewUrl, { width: 300, margin: 2, color: { dark: '#0A2540', light: '#FFFFFF' } });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(qrBuffer);
+  } catch(e) {
+    res.status(500).send('QR generation failed');
+  }
+});
+
 
 // ── REVIEW FEEDBACK HANDLER ──
 app.post('/review-feedback', async (req, res) => {
