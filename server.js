@@ -200,7 +200,8 @@ app.post('/chat', rateLimit, async (req, res) => {
     return res.status(400).json({ error: 'messages array is required' });
   }
   // Check activation status — allow trial messages if not yet activated
-  if (bizKey) {
+  // Skip activation check for review feedback chatbot
+  if (bizKey && chatType !== 'review_feedback') {
     const clientKey = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
     const client = clientInfo[clientKey];
     if (client && client.activated === false) {
