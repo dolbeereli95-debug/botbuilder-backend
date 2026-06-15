@@ -1043,10 +1043,13 @@ app.post('/signup', async (req, res) => {
   const billingLabel = billing === 'annual' ? 'Annual (1 month free)' : 'Monthly';
   const botName = botPersonality && botPersonality !== 'Not provided' ? botPersonality : bizName + ' Assistant';
 
+  const hasBot = ['bot','bundle','bot_review','bot_campaign','all'].includes(pkg);
+  const hasReviewPlan = ['review','bundle','bot_review','review_campaign','all'].includes(pkg);
+  const hasCampaign = ['campaign','bot_campaign','review_campaign','all'].includes(pkg);
+
   const botBuilderData = [
-    '===== BOTBUILDER CLIENT DATA =====', '',
+    '===== NETIFY BUILDS CLIENT DATA =====', '',
     'BUSINESS NAME: ' + (bizName || 'Not provided'),
-    'BOT NAME: ' + botName,
     'OWNER NAME: ' + (ownerName || 'Not provided'),
     'OWNER EMAIL: ' + (email || 'Not provided'),
     'OWNER PHONE: ' + (phone || 'Not provided'),
@@ -1055,26 +1058,32 @@ app.post('/signup', async (req, res) => {
     'PACKAGE SELECTED: ' + pkgLabel,
     'BILLING: ' + billingLabel,
     'HEARD ABOUT US: ' + (hearAbout || 'Not provided'), '',
-    'SERVICES OFFERED:', (services || 'Not provided'), '',
-    'BUSINESS HOURS: ' + (hours || 'Not provided'),
-    'SERVICE AREA: ' + (area || 'Not provided'), '',
-    'FREQUENTLY ASKED QUESTIONS:', (faqs || 'Not provided'), '',
-    'WHAT SETS THEM APART:', (differentiators && differentiators !== 'Not provided' ? differentiators : 'Not provided'), '',
-    'LICENSING / INSURANCE / WARRANTY: ' + (licensing && licensing !== 'Not provided' ? licensing : 'Not provided'),
-    'EMERGENCY SERVICES: ' + (emergency && emergency !== 'Not provided' ? emergency : 'Not provided'),
-    'SEASONAL NOTES: ' + (seasonal && seasonal !== 'Not provided' ? seasonal : 'Not provided'), '',
-    'GOOGLE REVIEW LINK: ' + (googleReviewLink || 'Not provided'),
-    'REVIEW ALERT EMAIL: ' + (alertEmail || 'Not provided'),
-    'BOT COLOR (set ACCENT_COLOR in widget code to this): ' + (botColor || '#2563eb'),
-    'LEAD CAPTURE TYPE: ' + (leadCapture || 'name_phone'),
-    'OPTIONAL FEATURES: ' + (features ? JSON.stringify(features) : 'None selected'),
-    'BOT TONE: ' + (tone || 'Friendly and casual'),
-    'BOT PERSONALITY NAME: ' + botName, '',
-    // Campaign fields (only if they signed up for campaigns)
-    ...(pkg && pkg.includes('campaign') || pkg === 'all' ? [
+    // Bot fields only if they have bot
+    ...(hasBot ? [
+      'BOT NAME: ' + botName,
+      'BOT COLOR: ' + (botColor || '#2563eb'),
+      'BOT TONE: ' + (tone || 'Friendly and casual'),
+      'LEAD CAPTURE TYPE: ' + (leadCapture || 'name_phone'),
+      'OPTIONAL FEATURES: ' + (features ? JSON.stringify(features) : 'None selected'), '',
+      'SERVICES OFFERED:', (services || 'Not provided'), '',
+      'BUSINESS HOURS: ' + (hours || 'Not provided'),
+      'SERVICE AREA: ' + (area || 'Not provided'), '',
+      'FREQUENTLY ASKED QUESTIONS:', (faqs || 'Not provided'), '',
+      'WHAT SETS THEM APART:', (differentiators || 'Not provided'), '',
+      'LICENSING / INSURANCE / WARRANTY: ' + (licensing || 'Not provided'),
+      'EMERGENCY SERVICES: ' + (emergency || 'Not provided'),
+      'SEASONAL NOTES: ' + (seasonal || 'Not provided'), '',
+    ] : []),
+    // Review fields only if they have review
+    ...(hasReviewPlan ? [
+      'GOOGLE REVIEW LINK: ' + (googleReviewLink || 'Not provided'),
+      'REVIEW ALERT EMAIL: ' + (alertEmail || 'Not provided'), '',
+    ] : []),
+    // Campaign fields only if they have campaigns
+    ...(hasCampaign ? [
       'CAMPAIGN LIST SIZE: ' + (campaignListSize || 'Not provided'),
       'CAMPAIGN LIST FORMAT: ' + (campaignListFormat || 'Not provided'),
-      'EXTRA CAMPAIGNS PER YEAR: ' + (extraCampaigns || '0'), ''
+      'EXTRA CAMPAIGNS PER YEAR: ' + (extraCampaigns || '0'), '',
     ] : []),
     '===== END OF CLIENT DATA ====='
   ].join('\n');
@@ -1114,6 +1123,7 @@ app.post('/signup', async (req, res) => {
             <pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">${botBuilderData}</pre>
           </div>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">
+            ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? `
             <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Widget Install Code — send this to client</p>
             <p style="color:#374151;font-size:13px;margin:0 0 10px;">Paste this before the closing &lt;/body&gt; tag on their website:</p>
             <pre style="background:#0f172a;color:#4ade80;font-size:11px;padding:14px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0 0 14px;font-family:monospace;">&lt;!-- Netify Builds Chat Widget --&gt;
@@ -1121,11 +1131,14 @@ app.post('/signup', async (req, res) => {
 window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSON.stringify(botName || bizName + ' Assistant')},accentColor:'${botColor || '#0A2540'}',backend:'https://botbuilder-backend-production.up.railway.app',leadEmail:${JSON.stringify(email)}};
 &lt;/script&gt;
 &lt;script src="https://netifybuilds.com/widget-loader.js"&gt;&lt;/script&gt;</pre>
+            ` : ''}
+            <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Next Steps</p>
             <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
-              <li>Send the install code above to the client or their web developer</li>
-              ${pkg === 'review' || pkg === 'bundle' || pkg === 'all' || pkg === 'review_campaign' ? '<li>Review filter is ready automatically — just make sure their Google review link is saved in their client record</li>' : ''}
-              ${pkg === 'campaign' || pkg === 'all' || pkg === 'bot_campaign' || pkg === 'review_campaign' ? '<li>Get their customer list for campaigns</li>' : ''}
-              <li>Bot stays inactive until they hit Activate in the portal — no subscription starts until then</li>
+              ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? '<li>Send the widget install code above to the client or their web developer</li>' : ''}
+              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? '<li>Review filter is active — confirm their Google review link is correct in the client record</li>' : ''}
+              ${['campaign','bot_campaign','review_campaign','all'].includes(pkg) ? '<li>Request their customer list for reactivation campaigns</li>' : ''}
+              <li>Client portal access code: <strong>${bizKey}</strong> — send this to the client</li>
+              <li>Subscription starts when client hits Activate in their portal</li>
             </ol>
           </div>
           <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
