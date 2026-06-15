@@ -1119,48 +1119,45 @@ app.post('/signup', async (req, res) => {
       body: JSON.stringify({
         from: 'onboarding@netifybuilds.com',
         to: 'dolbeereli95@gmail.com',
-        subject: '🚀 New Signup: ' + bizName + ' — ' + pkgLabel,
-        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
-          <h2 style="color:#0A2540;margin-bottom:4px;">New Client Signup</h2>
-          <p style="color:#64748b;font-size:14px;margin-bottom:24px;">Someone just signed up on your website. Here's everything you need to build their bot.</p>
-          <div style="background:white;border-radius:10px;padding:20px;border:1px solid #e5e7eb;margin-bottom:20px;">
-            <p style="margin:0 0 8px"><strong>Name:</strong> ${ownerName || 'Not provided'}</p>
-            <p style="margin:0 0 8px"><strong>Business:</strong> ${bizName}</p>
-            <p style="margin:0 0 8px"><strong>Email:</strong> ${email}</p>
-            <p style="margin:0 0 8px"><strong>Phone:</strong> ${phone || 'Not provided'}</p>
-            <p style="margin:0 0 8px"><strong>Website:</strong> ${website || 'Not provided'}</p>
-            <p style="margin:0 0 8px"><strong>Package:</strong> ${pkgLabel}</p>
-            <p style="margin:0 0 8px"><strong>Billing:</strong> ${billingLabel}</p>
-            <p style="margin:0 0 8px"><strong>Heard about us:</strong> ${hearAbout || 'Not provided'}</p>
-            <p style="margin:0;background:#f0fdf4;border-radius:6px;padding:8px 12px;"><strong>Portal Access Code:</strong> <span style="font-family:monospace;font-weight:700;color:#15803d;">${bizKey}</span> — send this to the client so they can log into their portal</p>
-          </div>
-          <div style="background:#0A2540;border-radius:10px;padding:20px;">
-            <p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">Client Data — view and edit in admin tool</p>
-            <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:0 0 12px;">Manage this client at: <a href="https://netifybuilds.com/admin" style="color:#93C5FD;">netifybuilds.com/admin</a></p>
-            <pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">${botBuilderData}</pre>
-          </div>
-          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">
-            ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? `
-            <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Widget Install Code — send this to client</p>
-            <p style="color:#374151;font-size:13px;margin:0 0 10px;">Paste this before the closing &lt;/body&gt; tag on their website:</p>
-            <pre style="background:#0f172a;color:#4ade80;font-size:11px;padding:14px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0 0 14px;font-family:monospace;">&lt;!-- Netify Builds Chat Widget --&gt;
-&lt;script&gt;
-window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSON.stringify(botName || bizName + ' Assistant')},accentColor:'${botColor || '#0A2540'}',backend:'https://botbuilder-backend-production.up.railway.app',leadEmail:${JSON.stringify(email)}};
-&lt;/script&gt;
-&lt;script src="https://netifybuilds.com/widget-loader.js"&gt;&lt;/script&gt;</pre>
-            ` : ''}
-            <p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Next Steps</p>
-            <ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">
-              ${['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? '<li>Send the widget install code above to the client or their web developer</li>' : ''}
-              ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? `<li>Review filter is active — confirm their Google review link is correct in the client record.<br>Review link: <a href="https://botbuilder-backend-production.up.railway.app/rate/${bizKey}">https://botbuilder-backend-production.up.railway.app/rate/${bizKey}</a></li>` : ''}
-              ${['campaign','bot_campaign','review_campaign','all'].includes(pkg) ? '<li>Request their customer list for reactivation campaigns</li>' : ''}
-              <li>Client portal access code: <strong>${bizKey}</strong> — send this to the client</li>
-              <li>Subscription starts when client hits Activate in their portal</li>
-            </ol>
-          </div>
-          ' + ((['review','bundle','bot_review','review_campaign','all'].includes(pkg)) ? qrCodeHtml : '') + '
-          <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
-        </div>`,
+        subject: '\u1F680 New Signup: ' + bizName + ' \u2014 ' + pkgLabel,
+        html: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">'
+          + '<h2 style="color:#0A2540;margin-bottom:4px;">New Client Signup</h2>'
+          + '<p style="color:#64748b;font-size:14px;margin-bottom:24px;">Someone just signed up on your website.</p>'
+          + '<div style="background:white;border-radius:10px;padding:20px;border:1px solid #e5e7eb;margin-bottom:20px;">'
+          + '<p style="margin:0 0 8px"><strong>Name:</strong> ' + (ownerName || 'Not provided') + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Business:</strong> ' + bizName + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Email:</strong> ' + email + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Phone:</strong> ' + (phone || 'Not provided') + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Website:</strong> ' + (website || 'Not provided') + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Package:</strong> ' + pkgLabel + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Billing:</strong> ' + billingLabel + '</p>'
+          + '<p style="margin:0 0 8px"><strong>Heard about us:</strong> ' + (hearAbout || 'Not provided') + '</p>'
+          + '<p style="margin:0;background:#f0fdf4;border-radius:6px;padding:8px 12px;"><strong>Portal Access Code:</strong> <span style="font-family:monospace;font-weight:700;color:#15803d;">' + bizKey + '</span> \u2014 send this to the client</p>'
+          + '</div>'
+          + '<div style="background:#0A2540;border-radius:10px;padding:20px;">'
+          + '<p style="color:#93C5FD;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">Client Data \u2014 view and edit in admin tool</p>'
+          + '<p style="color:rgba(255,255,255,0.5);font-size:12px;margin:0 0 12px;">Manage this client at: <a href=\"https://netifybuilds.com/admin\" style=\"color:#93C5FD;\">netifybuilds.com/admin</a></p>'
+          + '<pre style="color:#e2e8f0;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace;">' + botBuilderData + '</pre>'
+          + '</div>'
+          + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin-top:16px;">'
+          + (['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? (
+              '<p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Widget Install Code</p>'
+            + '<pre style="background:#0f172a;color:#4ade80;font-size:11px;padding:14px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0 0 14px;font-family:monospace;">'
+            + '&lt;!-- Netify Builds Chat Widget --&gt;\n&lt;script&gt;\nwindow.__nb={bizKey:\'' + bizKey + '\',bizName:' + JSON.stringify(bizName) + ',botName:' + JSON.stringify(botName || bizName + ' Assistant') + ',accentColor:\'' + (botColor || '#0A2540') + '\',backend:\'https://botbuilder-backend-production.up.railway.app\',leadEmail:' + JSON.stringify(email) + '};\n&lt;\/script&gt;\n&lt;script src=\"https://netifybuilds.com/widget-loader.js\"&gt;&lt;\/script&gt;'
+            + '</pre>'
+          ) : '')
+          + '<p style="color:#15803d;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Next Steps</p>'
+          + '<ol style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:18px;">'
+          + (['bot','bundle','bot_review','bot_campaign','all'].includes(pkg) ? '<li>Send the widget install code above to the client or their web developer</li>' : '')
+          + (['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? '<li>Review filter is active \u2014 confirm Google review link is correct.<br>Review link: <a href="https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '">https://botbuilder-backend-production.up.railway.app/rate/' + bizKey + '</a></li>' : '')
+          + (['campaign','bot_campaign','review_campaign','all'].includes(pkg) ? '<li>Request their customer list for reactivation campaigns</li>' : '')
+          + '<li>Portal access code: <strong>' + bizKey + '</strong> \u2014 send this to the client</li>'
+          + '<li>Subscription starts when client hits Activate in their portal</li>'
+          + '</ol>'
+          + '</div>'
+          + (['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? qrCodeHtml : '')
+          + '<p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>'
+          + '</div>',
       }),
     });
     if (!response.ok) return res.status(500).json({ error: 'Email send failed' });
