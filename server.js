@@ -2468,7 +2468,7 @@ app.get('/rate/:bizKey', (req, res) => {
   const bizName = client.bizName || 'this business';
   const googleLink = client.googleReviewLink || '';
   const customerName = req.query.name || '';
-  const accentColor = client.reviewColor || client.botColor || '#2C1810';
+  const accentColor = client.reviewColor || client.botColor || '#111827';
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -2481,7 +2481,7 @@ app.get('/rate/:bizKey', (req, res) => {
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--accent:${accentColor}}
 html,body{height:100%;min-height:100dvh}
-body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:flex;flex-direction:column;min-height:100dvh}
+body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:flex;flex-direction:column;min-height:100dvh}
 .page{flex:1;display:flex;flex-direction:column;min-height:100dvh;max-width:480px;margin:0 auto;width:100%;background:#FFFDF9}
 .header{padding:40px 28px 28px}
 .biz-label{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:14px;opacity:0.8}
@@ -2493,11 +2493,11 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 .stars{display:flex;justify-content:center;gap:6px;margin-bottom:10px}
 .star-btn{background:none;border:none;cursor:pointer;padding:4px;border-radius:8px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform 0.12s}
 .star-btn:active{transform:scale(0.9)}
-.star-labels{display:flex;justify-content:space-between;font-size:12px;color:#A89880;padding:0 4px;margin-bottom:0}
-.rating-msg{text-align:center;font-family:'Lora',Georgia,serif;font-size:15px;color:#6B5B4E;line-height:1.6;font-style:italic;margin:20px 0 0;min-height:24px}
+.star-labels{display:flex;justify-content:space-between;font-size:12px;color:#6B7280;padding:0 4px;margin-bottom:0}
+.rating-msg{text-align:center;font-family:'Lora',Georgia,serif;font-size:15px;color:#374151;line-height:1.6;font-style:italic;margin:20px 0 0;min-height:24px}
 .submit-btn{width:100%;padding:17px;border-radius:12px;background:var(--accent);color:#FFFDF9;border:none;font-family:'Lora',Georgia,serif;font-size:16px;font-weight:600;cursor:pointer;margin-top:22px;transition:opacity 0.18s;letter-spacing:0.01em;-webkit-tap-highlight-color:transparent}
 .submit-btn:active{opacity:0.8}
-.trust-note{text-align:center;font-size:12px;color:#C9B9A8;margin-top:16px;line-height:1.6}
+.trust-note{text-align:center;font-size:12px;color:#9CA3AF;margin-top:16px;line-height:1.6}
 
 #chatView{display:none;flex:1;flex-direction:column}
 .chat-label{font-size:12px;font-weight:600;color:#374151;letter-spacing:0.05em;margin-bottom:18px;display:flex;align-items:center;gap:8px}
@@ -2507,19 +2507,19 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 .msg.bot{background:#F5EEE4;border-radius:4px 18px 18px 18px;align-self:flex-start;color:#1F2937;font-family:'Lora',Georgia,serif;font-weight:400}
 .msg.user{background:var(--accent);color:#FFFDF9;border-radius:18px 4px 18px 18px;align-self:flex-end}
 .typing-wrap{align-self:flex-start;background:#F5EEE4;border-radius:4px 18px 18px 18px;padding:15px 18px;display:flex;gap:5px;align-items:center}
-.typing-wrap span{width:6px;height:6px;border-radius:50%;background:#A89880;display:inline-block;animation:bounce 1.2s infinite}
+.typing-wrap span{width:6px;height:6px;border-radius:50%;background:#9CA3AF;display:inline-block;animation:bounce 1.2s infinite}
 .typing-wrap span:nth-child(2){animation-delay:0.2s}
 .typing-wrap span:nth-child(3){animation-delay:0.4s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-6px);opacity:1}}
 .input-wrap{background:#FFFDF9;padding-top:8px}
 .input-row{display:flex;gap:10px;align-items:flex-end;background:#F5EEE4;border:1.5px solid #E0D5C5;border-radius:14px;padding:10px 10px 10px 16px;transition:border-color 0.15s}
 .input-row:focus-within{border-color:var(--accent)}
-.chat-input{flex:1;border:none;background:transparent;font-size:16px;font-family:'Inter',sans-serif;color:#2C1810;outline:none;resize:none;min-height:24px;max-height:80px;line-height:1.5}
-.chat-input::placeholder{color:#A89880}
+.chat-input{flex:1;border:none;background:transparent;font-size:16px;font-family:'Inter',sans-serif;color:#111827;outline:none;resize:none;min-height:24px;max-height:80px;line-height:1.5}
+.chat-input::placeholder{color:#9CA3AF}
 .send-btn{width:38px;height:38px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;-webkit-tap-highlight-color:transparent}
 .send-btn:active{opacity:0.8}
 .send-btn svg{width:15px;height:15px;stroke:#FFFDF9;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
-.end-btn{width:100%;margin-top:12px;padding:14px;border-radius:12px;background:transparent;border:1.5px solid #E0D5C5;font-family:'Lora',Georgia,serif;font-size:14px;font-weight:600;color:#A89880;cursor:pointer;display:none;-webkit-tap-highlight-color:transparent}
+.end-btn{width:100%;margin-top:12px;padding:14px;border-radius:12px;background:transparent;border:1.5px solid #E0D5C5;font-family:'Lora',Georgia,serif;font-size:14px;font-weight:600;color:#6B7280;cursor:pointer;display:none;-webkit-tap-highlight-color:transparent}
 .end-btn:active{background:#F5EEE4}
 
 #thanksView{display:none;text-align:center;padding:16px 0;flex:1;flex-direction:column;justify-content:center;align-items:center}
@@ -2529,7 +2529,7 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#2C1810;display:fle
 .google-btn{display:inline-flex;align-items:center;gap:10px;padding:15px 28px;background:#4285F4;color:white;border-radius:12px;text-decoration:none;font-family:'Lora',Georgia,serif;font-size:15px;font-weight:600;-webkit-tap-highlight-color:transparent}
 .google-btn:active{opacity:0.85}
 
-.footer{padding:18px 28px;border-top:1px solid #EDE5D8;text-align:center;font-size:11px;color:#C9B9A8;background:#FFFDF9}
+.footer{padding:18px 28px;border-top:1px solid #EDE5D8;text-align:center;font-size:11px;color:#9CA3AF;background:#FFFDF9}
 </style>
 </head>
 <body>
@@ -2636,8 +2636,8 @@ function showThanks(isPositive) {
     document.getElementById('thanksSub').textContent = 'Would you mind sharing that on Google? It helps other people in the area find us, and it means the world to our team.';
     if (GOOGLE_LINK) document.getElementById('googleBtn').style.display = 'inline-flex';
   } else {
-    document.getElementById('thanksCircle').innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#F5EEE4" stroke="#C9B9A8" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#A89880" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
-    document.getElementById('thanksCircle').style.background = '#F5EEE4';
+    document.getElementById('thanksCircle').innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#F3F4F6" stroke="#D1D5DB" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#6B7280" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+    document.getElementById('thanksCircle').style.background = '#F3F4F6';
     document.getElementById('thanksTitle').textContent = 'Thank you for telling us.';
     document.getElementById('thanksSub').textContent = 'We are sorry we fell short. The owner will see this personally and we will use it to do better. That is a promise.';
   }
