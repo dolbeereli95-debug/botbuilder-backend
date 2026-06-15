@@ -2747,7 +2747,12 @@ async function sendChatMsg() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        messages: chatMessages.slice(-8),
+        messages: (function() {
+          var msgs = chatMessages.slice(-8);
+          // Anthropic requires first message to be user role
+          while (msgs.length > 0 && msgs[0].role !== 'user') msgs = msgs.slice(1);
+          return msgs.length > 0 ? msgs : [{ role: 'user', content: text }];
+        })(),
         systemPrompt: systemPrompt,
         bizKey: BIZ_KEY,
         isAdminSession: false,
