@@ -2767,7 +2767,8 @@ async function sendChatMsg() {
     addMsg(reply, 'bot');
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
-    addMsg('Thank you for sharing that.', 'bot');
+    console.error('[review chat error]', e);
+    addMsg('Error: ' + (e && e.message ? e.message : JSON.stringify(e)), 'bot');
   }
 }
 
