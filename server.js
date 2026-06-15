@@ -156,6 +156,65 @@ app.use(cors({
   },
   credentials: false
 }));
+// ── STRIPE WEBHOOK (needs raw body — must be before express.json) ──
+app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(400).json({ error: 'Stripe not configured' });
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  let event;
+  try {
+    event = webhookSecret
+      ? stripe.webhooks.constructEvent(req.body, sig, webhookSecret)
+      : JSON.parse(req.body);
+  } catch(e) {
+    console.error('[Stripe Webhook] Signature error:', e.message);
+    return res.status(400).send('Webhook signature error');
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    // Subscription cancelled — deactivate the bot
+    const customerId = event.data.object.customer;
+    const bizKey = Object.keys(clientInfo).find(k => clientInfo[k].stripeCustomerId === customerId);
+    if (bizKey) {
+      clientInfo[bizKey].activated = false;
+      clientInfo[bizKey].cancelledAt = new Date().toISOString();
+      debouncedSave('client_info.json', clientInfo);
+      console.log('[Stripe Webhook] Deactivated bot for:', bizKey);
+      // Notify Eli
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: 'dolbeereli95@gmail.com',
+          subject: '❌ Subscription cancelled — ' + (clientInfo[bizKey].bizName || bizKey),
+          html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#fef2f2;border-radius:12px;border:1px solid #fecaca;"><h2 style="color:#dc2626;margin-bottom:8px;">Subscription Cancelled</h2><p style="color:#374151;font-size:14px;"><strong>' + (clientInfo[bizKey].bizName || bizKey) + '</strong> cancelled their subscription. Bot has been deactivated.</p><p style="color:#374151;font-size:13px;margin-top:8px;"><strong>Cancelled:</strong> ' + new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }) + ' ET</p></div>'
+        })
+      }).catch(() => {});
+    }
+  }
+
+  if (event.type === 'invoice.payment_failed') {
+    // Payment failed — notify Eli
+    const customerId = event.data.object.customer;
+    const bizKey = Object.keys(clientInfo).find(k => clientInfo[k].stripeCustomerId === customerId);
+    if (bizKey) {
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: 'dolbeereli95@gmail.com',
+          subject: '⚠️ Payment failed — ' + (clientInfo[bizKey].bizName || bizKey),
+          html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#fffbeb;border-radius:12px;border:1px solid #fcd34d;"><h2 style="color:#b45309;margin-bottom:8px;">Payment Failed</h2><p style="color:#374151;font-size:14px;"><strong>' + (clientInfo[bizKey].bizName || bizKey) + '</strong> had a failed payment. Stripe will retry automatically. You may want to reach out.</p></div>'
+        })
+      }).catch(() => {});
+    }
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json({ limit: '50kb' }));
 
 // ── RATE LIMITER — max 30 /chat requests per IP per hour ──
@@ -2559,14 +2618,15 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:fle
     </div>
 
     <div id="chatView" style="display:none;flex:1;flex-direction:column;">
-      <div class="chat-label"><div class="chat-label-dot"></div>Private — not posted anywhere publicly</div>
+      <div class="chat-label"><div class="chat-label-dot"></div><span id="chatLabelText">Private — not posted anywhere publicly</span></div>
+      <div id="chatContext" style="background:#F3F4F6;border-radius:14px;padding:14px 16px;margin-bottom:18px;border-left:3px solid var(--accent);display:none;"><p id="chatContextText" style="font-size:13px;color:#374151;line-height:1.7;margin:0;font-family:Inter,sans-serif;"></p></div>
       <div class="chat-messages" id="chatMessages"></div>
       <div class="input-wrap">
         <div class="input-row">
-          <textarea class="chat-input" id="chatInput" placeholder="Tell us what happened..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <textarea class="chat-input" id="chatInput" placeholder="Type your message..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
           <button class="send-btn" onclick="sendChatMsg()"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
-        <button class="end-btn" id="chatEndBtn" onclick="endChat()">I am done — submit my feedback</button>
+        <button class="end-btn" id="chatEndBtn" onclick="endChat()">I am done, submit my feedback</button>
       </div>
     </div>
 
@@ -2574,10 +2634,18 @@ body{font-family:'Inter',sans-serif;background:#F7F2EA;color:#111827;display:fle
       <div class="thanks-circle" id="thanksCircle"></div>
       <div class="thanks-title" id="thanksTitle"></div>
       <p class="thanks-sub" id="thanksSub"></p>
+      <div id="draftWrap" style="display:none;text-align:left;margin-bottom:16px;">
+        <div style="background:#F3F4F6;border:1.5px solid #E5E7EB;border-radius:14px;padding:16px;position:relative;">
+          <div style="font-size:11px;font-weight:600;color:#9CA3AF;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;font-family:Inter,sans-serif;">Your drafted Google review</div>
+          <button onclick="copyDraft()" id="copyBtn" style="position:absolute;top:12px;right:12px;background:white;border:1.5px solid #E5E7EB;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;color:#6B7280;cursor:pointer;font-family:Inter,sans-serif;">Copy</button>
+          <div id="draftText" style="font-size:14px;color:#1F2937;line-height:1.7;font-family:Lora,Georgia,serif;font-style:italic;padding-right:52px;"></div>
+        </div>
+      </div>
       <a href="${googleLink}" class="google-btn" id="googleBtn" style="display:none;">
         <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-        Leave a Google Review
+        Post to Google
       </a>
+      <a href="${googleLink}" id="googleLinkSmall" style="display:none;font-size:13px;color:#9CA3AF;text-align:center;margin-top:16px;font-family:Inter,sans-serif;text-decoration:underline;">Would you still like to share your experience on Google?</a>
     </div>
 
   </div>
@@ -2594,6 +2662,7 @@ var selectedRating = 0;
 var chatMessages = [];
 var chatDone = false;
 var msgCount = 0;
+var isPositiveFlow = false;
 var ratingMsgs = ['','We are really sorry to hear that.','That is hard to hear — thank you for being honest.','Thank you for sharing that with us.','Really glad to hear it went well.','That genuinely means so much to us.'];
 
 function selectStar(rating) {
@@ -2613,19 +2682,24 @@ async function submitRating() {
   var btn = document.getElementById('submitBtn');
   btn.textContent = 'One moment...';
   btn.disabled = true;
+  document.getElementById('rateView').style.display = 'none';
+  var cv = document.getElementById('chatView');
+  cv.style.display = 'flex';
+  cv.style.flexDirection = 'column';
   if (selectedRating >= 4) {
-    try { await fetch(BACKEND + '/review-feedback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: '', customerName: CUSTOMER_NAME }) }); } catch(e) {}
-    showThanks(true);
+    document.getElementById('chatLabelText').textContent = 'Your kind words go directly to the team';
+    document.getElementById('chatContext').style.display = 'block';
+    document.getElementById('chatContextText').textContent = 'We are so glad to hear it went well. Tell us a little more, it means a lot to the team.';
+    setTimeout(function() { startPositiveChat(); }, 200);
   } else {
-    document.getElementById('rateView').style.display = 'none';
-    var cv = document.getElementById('chatView');
-    cv.style.display = 'flex';
-    cv.style.flexDirection = 'column';
+    document.getElementById('chatLabelText').textContent = 'Private — not posted anywhere publicly';
+    document.getElementById('chatContext').style.display = 'block';
+    document.getElementById('chatContextText').textContent = 'Whatever you share goes directly to the owner, not online, not public. We genuinely want to understand.';
     setTimeout(function() { startFeedbackChat(); }, 200);
   }
 }
 
-function showThanks(isPositive) {
+function showThanks(isPositive, draftedReview) {
   document.getElementById('rateView').style.display = 'none';
   document.getElementById('chatView').style.display = 'none';
   document.getElementById('thanksView').style.display = 'block';
@@ -2633,13 +2707,18 @@ function showThanks(isPositive) {
     document.getElementById('thanksCircle').innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#E8F5E2" stroke="#7AAE6E" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#7AAE6E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
     document.getElementById('thanksCircle').style.background = '#E8F5E2';
     document.getElementById('thanksTitle').textContent = 'That genuinely made our day.';
-    document.getElementById('thanksSub').textContent = 'Would you mind sharing that on Google? It helps other people in the area find us, and it means the world to our team.';
-    if (GOOGLE_LINK) document.getElementById('googleBtn').style.display = 'inline-flex';
+    document.getElementById('thanksSub').textContent = 'We put together a quick review based on what you shared. Feel free to edit it before posting.';
+    if (draftedReview) {
+      document.getElementById('draftText').textContent = draftedReview;
+      document.getElementById('draftWrap').style.display = 'block';
+    }
+    if (GOOGLE_LINK) document.getElementById('googleBtn').style.display = 'flex';
   } else {
     document.getElementById('thanksCircle').innerHTML = '<svg width="36" height="36" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#F3F4F6" stroke="#D1D5DB" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#6B7280" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
     document.getElementById('thanksCircle').style.background = '#F3F4F6';
     document.getElementById('thanksTitle').textContent = 'Thank you for telling us.';
     document.getElementById('thanksSub').textContent = 'We are sorry we fell short. The owner will see this personally and we will use it to do better. That is a promise.';
+    if (GOOGLE_LINK) document.getElementById('googleLinkSmall').style.display = 'block';
   }
 }
 
@@ -2664,9 +2743,27 @@ function showTyping() {
   return div;
 }
 
+async function startPositiveChat() {
+  var typing = showTyping();
+  var sp = 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. You are genuinely happy they had a great experience. Ask them what stood out most. Then ask who helped them or what the job was for, and how the overall experience felt. Keep it to 3 questions total across the conversation. After getting enough detail, tell them you are going to put together a Google review they can copy and post. Keep responses short and warm. Do not use emojis. Do not use em dashes. Do not use bullet points. Do not output LEAD_CAPTURED.';
+  try {
+    var res = await fetch(BACKEND + '/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ messages: [{ role: 'user', content: 'I just gave ' + selectedRating + ' stars.' }], systemPrompt: sp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' }) });
+    var data = await res.json();
+    try { typing.remove(); } catch(e) {}
+    var reply = (data && data.reply) || 'We are so glad to hear that! What stood out most about your experience with us?';
+    addMsg(reply, 'bot');
+    chatMessages = [{ role: 'assistant', content: reply }];
+    isPositiveFlow = true;
+  } catch(e) {
+    try { typing.remove(); } catch(e2) {}
+    addMsg('We are so glad to hear that! What stood out most about your experience with us?', 'bot');
+    isPositiveFlow = true;
+  }
+}
+
 async function startFeedbackChat() {
   var typing = showTyping();
-  var sp = 'You are a warm, empathetic person following up on behalf of ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. Speak like a caring human — not a customer service bot. Start by gently acknowledging how they felt and asking what happened. Then ask 2-3 warm follow-up questions to understand the full picture. After 3-4 exchanges, thank them sincerely, tell them the owner will see this personally, and let them know it will be used to make things right. Keep responses conversational and short. Never be defensive. Do not collect contact info. Do not output LEAD_CAPTURED.';
+  var sp = 'You are a warm, empathetic person following up on behalf of ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. Speak like a caring human, not a customer service bot. Start by gently acknowledging how they felt and asking what happened. Then ask 2-3 warm follow-up questions to understand the full picture. After 3-4 exchanges, thank them sincerely and tell them the owner will see this personally. Keep responses conversational and short. Never be defensive. Do not use emojis. Do not use em dashes. Do not collect contact info. Do not output LEAD_CAPTURED.';
   try {
     var res = await fetch(BACKEND + '/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ messages: [{ role: 'user', content: 'I just gave ' + selectedRating + ' stars.' }], systemPrompt: sp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' }) });
     var data = await res.json();
@@ -2674,9 +2771,11 @@ async function startFeedbackChat() {
     var reply = (data && data.reply) || 'Thank you for taking the time. Can you tell me a little about what happened?';
     addMsg(reply, 'bot');
     chatMessages = [{ role: 'assistant', content: reply }];
+    isPositiveFlow = false;
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
     addMsg('Thank you for the rating. Can you tell me a little about what happened?', 'bot');
+    isPositiveFlow = false;
   }
 }
 
@@ -2690,7 +2789,9 @@ async function sendChatMsg() {
   msgCount++;
   if (msgCount >= 3) document.getElementById('chatEndBtn').style.display = 'block';
   var typing = showTyping();
-  var sp = 'You are a warm, empathetic person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue listening warmly. Ask thoughtful follow-up questions. After 3-4 exchanges total, thank them sincerely and let them know the owner will see this personally. Keep it conversational and human. Never be defensive. Do not collect contact info. Do not output LEAD_CAPTURED.';
+  var sp = isPositiveFlow
+    ? 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the warm conversation. You have asked what stood out, who helped them, and how the overall experience felt. After 3 exchanges total wrap up warmly and tell them you are putting together a Google review they can copy and post. Keep responses short and warm. Do not use emojis. Do not use em dashes. Do not output LEAD_CAPTURED.'
+    : 'You are a warm, empathetic person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue listening warmly. Ask thoughtful follow-up questions. After 3-4 exchanges total, thank them sincerely and let them know the owner will see this personally. Keep it conversational and human. Never be defensive. Do not use emojis. Do not use em dashes. Do not collect contact info. Do not output LEAD_CAPTURED.';
   try {
     var msgs = chatMessages.slice(-8);
     while (msgs.length > 0 && msgs[0].role !== 'user') msgs = msgs.slice(1);
@@ -2714,11 +2815,52 @@ async function endChat() {
   document.getElementById('chatInput').disabled = true;
   document.getElementById('chatEndBtn').disabled = true;
   var full = chatMessages.map(function(m) { return m.content; }).join(' | ');
-  try {
-    await fetch(BACKEND + '/review-feedback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: full, customerName: CUSTOMER_NAME, conversation: chatMessages }) });
-    await fetch(BACKEND + '/log-conversation', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, bizName: BIZ_NAME, messages: chatMessages, leadCaptured: false, leadName: CUSTOMER_NAME || 'Review Feedback (' + selectedRating + ' stars)', leadPhone: '', leadJobType: selectedRating + '-star review feedback', timestamp: new Date().toISOString() }) });
-  } catch(e) {}
-  showThanks(false);
+
+  if (isPositiveFlow) {
+    // Generate a drafted review using Claude
+    var draftedReview = null;
+    try {
+      var userMsgs = chatMessages.filter(function(m) { return m.role === 'user'; }).map(function(m) { return m.content; }).join(' ');
+      var draftSp = 'You are drafting a Google review on behalf of a customer for ' + BIZ_NAME + '. Based on what the customer shared in this conversation, write a short, genuine Google review in first person as if the customer wrote it themselves. Keep it to 2-4 sentences. Use natural, conversational language. If they mentioned a specific person who helped them, include the name. If they did not mention a name, say "the technician" or "the team". Do not use em dashes. Do not use bullet points. Do not use emojis. Do not start with "I". Sound like a real person texting a friend about a good experience. Only output the review text, nothing else.';
+      var draftRes = await fetch(BACKEND + '/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ messages: [{ role: 'user', content: 'Here is what the customer said about their experience: ' + userMsgs + '. Write the Google review now.' }], systemPrompt: draftSp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' }) });
+      var draftData = await draftRes.json();
+      draftedReview = (draftData && draftData.reply) || null;
+      if (draftedReview && draftedReview.indexOf('LEAD_CAPTURED|') !== -1) {
+        draftedReview = draftedReview.substring(0, draftedReview.indexOf('LEAD_CAPTURED|')).trim();
+      }
+    } catch(e) {}
+    try {
+      await fetch(BACKEND + '/review-feedback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: full, customerName: CUSTOMER_NAME, conversation: chatMessages }) });
+      await fetch(BACKEND + '/log-conversation', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, bizName: BIZ_NAME, messages: chatMessages, leadCaptured: false, leadName: CUSTOMER_NAME || 'Positive Review (' + selectedRating + ' stars)', leadPhone: '', leadJobType: selectedRating + '-star positive review', timestamp: new Date().toISOString() }) });
+    } catch(e) {}
+    showThanks(true, draftedReview);
+  } else {
+    try {
+      await fetch(BACKEND + '/review-feedback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: full, customerName: CUSTOMER_NAME, conversation: chatMessages }) });
+      await fetch(BACKEND + '/log-conversation', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ bizKey: BIZ_KEY, bizName: BIZ_NAME, messages: chatMessages, leadCaptured: false, leadName: CUSTOMER_NAME || 'Review Feedback (' + selectedRating + ' stars)', leadPhone: '', leadJobType: selectedRating + '-star review feedback', timestamp: new Date().toISOString() }) });
+    } catch(e) {}
+    showThanks(false, null);
+  }
+}
+
+function copyDraft() {
+  var text = document.getElementById('draftText').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+  }).catch(function() {
+    // Fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    var btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+  });
 }
 
 function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMsg(); } }
