@@ -218,20 +218,21 @@ app.post('/chat', rateLimit, async (req, res) => {
     }
   }
 
-  // Fall back to stored system prompt if widget didn't send one
-  let resolvedPrompt = systemPrompt;
-  if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && bizKey) {
-    const storedClient = clientInfo[bizKey.toLowerCase()];
-    if (storedClient && storedClient.systemPrompt) {
-      resolvedPrompt = storedClient.systemPrompt;
+  // For review feedback chat always use the sent system prompt — never fall back to stored bot prompt
+  let resolvedPrompt;
+  if (chatType === 'review_feedback') {
+    resolvedPrompt = systemPrompt && systemPrompt.length >= 10 ? systemPrompt : 'You are a private, empathetic feedback assistant. A customer left a low star rating. Ask warmly what went wrong, one question at a time. After 3-4 exchanges thank them and let them know their feedback has been shared privately with the owner. Keep responses short and human. Never be defensive. Do not collect contact info. Do not output LEAD_CAPTURED.';
+  } else {
+    resolvedPrompt = systemPrompt;
+    if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && bizKey) {
+      const storedClient = clientInfo[bizKey.toLowerCase()];
+      if (storedClient && storedClient.systemPrompt) {
+        resolvedPrompt = storedClient.systemPrompt;
+      }
     }
-  }
-  // For review feedback chat, use a default prompt if none provided
-  if ((!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) && chatType === 'review_feedback') {
-    resolvedPrompt = 'You are a private, empathetic feedback assistant. A customer left a low star rating. Ask warmly what went wrong, one question at a time. After 3-4 exchanges thank them and let them know their feedback has been shared privately with the owner. Keep responses short and human. Never be defensive.';
-  }
-  if (!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) {
-    return res.status(400).json({ error: 'systemPrompt is required' });
+    if (!resolvedPrompt || typeof resolvedPrompt !== 'string' || resolvedPrompt.length < 10) {
+      return res.status(400).json({ error: 'systemPrompt is required' });
+    }
   }
 
   // Detect admin mode -- if the message IS the bizKey, switch to admin mode
@@ -2763,7 +2764,8 @@ async function sendChatMsg() {
     try { typing.remove(); } catch(e) {}
     var reply = (data && data.reply) || 'Thank you for sharing that with us.';
     // Strip any LEAD_CAPTURED triggers just in case
-    reply = reply.replace(/LEAD_CAPTURED\|.*/g, '').trim();
+    reply = reply.replace(/LEAD_CAPTURED\|[^\n]*/g, '').trim();
+    if (!reply) reply = 'Thank you for sharing that with us.';
     addMsg(reply, 'bot');
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
