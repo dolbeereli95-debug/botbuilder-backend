@@ -12,6 +12,8 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "google-auth-library": "^10.6.2",
+    "qrcode": "^1.5.4",
+    "qrcode": "^1.5.3",
     "resend": "^6.10.0",
     "stripe": "^14.0.0",
     "ws": "^8.18.0"

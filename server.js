@@ -1,5 +1,6 @@
 const express = require('express');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+const QRCode = require('qrcode');
 const { OAuth2Client } = require('google-auth-library');
 const GOOGLE_CLIENT_ID = '968822994959-js3lra786sg48d1t29l5ju5kbio6h6m1.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -1092,6 +1093,22 @@ app.post('/signup', async (req, res) => {
   // Generate bizKey early so it's available in the email template
   const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
 
+  // Generate QR code for review link (inline base64 so it works in all email clients)
+  let qrCodeHtml = '';
+  const hasReviewInPlan = ['review','bundle','bot_review','review_campaign','all'].includes(pkg);
+  if (hasReviewInPlan) {
+    try {
+      const reviewUrl = 'https://botbuilder-backend-production.up.railway.app/rate/' + bizKey;
+      const qrDataUrl = await QRCode.toDataURL(reviewUrl, { width: 200, margin: 2, color: { dark: '#0A2540', light: '#FFFFFF' } });
+      qrCodeHtml = \`<div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">
+        <p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>
+        <img src="\${qrDataUrl}" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;border-radius:8px;" />
+        <p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>
+        <p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code and save as image to use in print materials.</p>
+      </div>\`;
+    } catch(e) { console.error('[QR Error]', e.message); }
+  }
+
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -1141,14 +1158,7 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
               <li>Subscription starts when client hits Activate in their portal</li>
             </ol>
           </div>
-          ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? `
-          <div style="background:white;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-top:16px;text-align:center;">
-            <p style="color:#0A2540;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">QR Code — for receipts, invoices, or counter</p>
-            <img src="https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent('https://botbuilder-backend-production.up.railway.app/rate/' + bizKey)}&choe=UTF-8" width="200" height="200" alt="Review QR Code" style="display:block;margin:0 auto 12px;" />
-            <p style="color:#64748b;font-size:12px;margin:0;">Print this and stick it on your receipts, invoices, or front desk. Customers scan it after a job to leave a review.</p>
-            <p style="color:#94a3b8;font-size:11px;margin:8px 0 0;">Right-click the QR code above and save it as an image to use in print materials.</p>
-          </div>
-          ` : ''}
+          ${['review','bundle','bot_review','review_campaign','all'].includes(pkg) ? qrCodeHtml : ''}
           <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">Sent by Netify Builds</p>
         </div>`,
       }),
@@ -1176,6 +1186,7 @@ window.__nb={bizKey:'${bizKey}',bizName:${JSON.stringify(bizName)},botName:${JSO
        domain: clientDomain,
        botName: botName || (bizName + ' Assistant'),
        botColor: botColor || '#0A2540',
+       reviewColor: reviewColor || botColor || '#0A2540',
        services: services || '',
        hours: hours || '',
        area: area || '',
@@ -2454,127 +2465,349 @@ app.get('/rate/:bizKey', (req, res) => {
   const bizName = client.bizName || 'this business';
   const googleLink = client.googleReviewLink || '';
   const customerName = req.query.name || '';
+  const accentColor = client.reviewColor || client.botColor || '#0A2540';
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rate ${bizName}</title>
+<title>How did we do? — ${bizName}</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-.card{background:white;border-radius:20px;padding:32px 28px;max-width:400px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,0.1);text-align:center;}
-.biz-name{font-size:1.2rem;font-weight:800;color:#0A2540;margin-bottom:6px;}
-.sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:28px;}
-.stars{display:flex;justify-content:center;gap:12px;margin-bottom:28px;}
-.star{font-size:44px;cursor:pointer;transition:transform 0.1s;filter:grayscale(1);opacity:0.4;}
-.star:hover,.star.selected{filter:grayscale(0);opacity:1;transform:scale(1.15);}
-.star.selected{transform:scale(1.2);}
-.feedback-box{display:none;margin-bottom:20px;}
-textarea{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;min-height:90px;outline:none;}
-textarea:focus{border-color:#2563eb;}
-.btn{width:100%;padding:14px;border-radius:99px;background:#0A2540;color:white;border:none;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.2s;display:none;}
-.btn:hover{background:#2563eb;}
-.thanks{display:none;padding:20px 0;}
-.thanks-icon{font-size:48px;margin-bottom:12px;}
-.thanks-title{font-size:1.1rem;font-weight:800;color:#0A2540;margin-bottom:8px;}
-.thanks-sub{font-size:13px;color:#64748b;line-height:1.6;}
-.google-btn{display:inline-block;margin-top:16px;padding:12px 24px;background:#4285F4;color:white;border-radius:99px;text-decoration:none;font-size:14px;font-weight:700;}
-.brand{font-size:11px;color:#cbd5e1;margin-top:24px;}
+:root{--accent:${accentColor};--navy:#0A2540;--text:#0F172A;--soft:#64748B;--border:#E2E8F0;--off:#F8FAFC}
+body{font-family:'Inter',sans-serif;background:var(--off);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(rgba(59,130,246,0.04) 1px,transparent 1px);background-size:22px 22px;pointer-events:none;}
+.card{background:white;border-radius:24px;padding:40px 36px;max-width:420px;width:100%;box-shadow:0 4px 32px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);border:1px solid var(--border);position:relative;z-index:1;}
+@media(max-width:480px){.card{padding:28px 20px;border-radius:20px;}}
+.brand-bar{display:flex;align-items:center;gap:10px;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border);}
+.brand-icon{width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.brand-icon svg{width:20px;height:20px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.brand-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:800;color:var(--text);}
+.brand-sub{font-size:12px;color:var(--soft);}
+.question{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.25rem;font-weight:800;color:var(--text);margin-bottom:6px;letter-spacing:-0.02em;line-height:1.3;}
+.question-sub{font-size:14px;color:var(--soft);margin-bottom:28px;line-height:1.6;}
+.stars{display:flex;justify-content:center;gap:10px;margin-bottom:8px;}
+.star-btn{background:none;border:none;cursor:pointer;padding:6px;border-radius:12px;transition:transform 0.15s,background 0.15s;-webkit-tap-highlight-color:transparent;}
+.star-btn:hover{background:var(--off);transform:scale(1.1);}
+.star-btn svg{width:44px;height:44px;transition:all 0.15s;}
+.star-btn svg .star-fill{fill:#e2e8f0;transition:fill 0.15s;}
+.star-btn.active svg .star-fill{fill:#FBBF24;}
+.star-btn.active{transform:scale(1.12);}
+.star-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--soft);margin-bottom:24px;padding:0 6px;}
+
+/* Chat interface */
+#chatView{display:none;}
+.chat-header{background:var(--accent);border-radius:14px 14px 0 0;padding:14px 18px;display:flex;align-items:center;gap:10px;margin:-40px -36px 0;margin-bottom:20px;}
+@media(max-width:480px){.chat-header{margin:-28px -20px 0;}}
+.chat-av{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.chat-av svg{width:18px;height:18px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.chat-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;color:white;}
+.chat-status{font-size:11px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:4px;}
+.chat-dot{width:5px;height:5px;border-radius:50%;background:#4ade80;}
+.chat-messages{display:flex;flex-direction:column;gap:10px;min-height:200px;max-height:320px;overflow-y:auto;margin-bottom:16px;padding:4px 0;}
+.msg{max-width:85%;padding:10px 14px;font-size:13.5px;line-height:1.55;word-wrap:break-word;}
+.msg.bot{background:var(--off);border:1px solid var(--border);border-radius:4px 16px 16px 16px;align-self:flex-start;color:var(--text);}
+.msg.user{background:var(--accent);color:white;border-radius:16px 4px 16px 16px;align-self:flex-end;}
+.typing{display:flex;gap:4px;align-items:center;padding:12px 14px;background:var(--off);border:1px solid var(--border);border-radius:4px 16px 16px 16px;align-self:flex-start;}
+.typing span{width:5px;height:5px;border-radius:50%;background:#94a3b8;animation:bounce 1.2s infinite;}
+.typing span:nth-child(2){animation-delay:0.2s}
+.typing span:nth-child(3){animation-delay:0.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
+.chat-input-row{display:flex;gap:8px;align-items:flex-end;}
+.chat-input{flex:1;border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;resize:none;min-height:44px;max-height:100px;line-height:1.4;color:var(--text);}
+.chat-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);}
+.chat-send{width:40px;height:40px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;}
+.chat-send:hover{opacity:0.85;}
+.chat-send svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.chat-end-btn{width:100%;margin-top:10px;padding:11px;border-radius:99px;background:var(--off);border:1.5px solid var(--border);font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;color:var(--soft);cursor:pointer;transition:all 0.15s;display:none;}
+.chat-end-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* Thanks view */
+#thanksView{display:none;text-align:center;padding:12px 0;}
+.thanks-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+.thanks-icon svg{width:32px;height:32px;}
+.thanks-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.15rem;font-weight:800;color:var(--text);margin-bottom:8px;letter-spacing:-0.02em;}
+.thanks-sub{font-size:14px;color:var(--soft);line-height:1.6;margin-bottom:20px;}
+.google-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;background:#4285F4;color:white;border-radius:99px;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;transition:opacity 0.2s;}
+.google-btn:hover{opacity:0.9;}
+.google-btn svg{width:16px;height:16px;fill:white;}
+
+.submit-btn{width:100%;padding:14px;border-radius:99px;background:var(--accent);color:white;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:opacity 0.2s;display:none;margin-top:8px;}
+.submit-btn:hover{opacity:0.88;}
+.poweredby{font-size:11px;color:#cbd5e1;text-align:center;margin-top:24px;}
 </style>
 </head>
 <body>
 <div class="card">
+  <!-- Rating view -->
   <div id="rateView">
-    <div class="biz-name">${bizName}</div>
-    <p class="sub">${customerName ? 'Hi ' + customerName + '! How' : 'How'} was your experience with us?</p>
-    <div class="stars">
-      <span class="star" data-rating="1">⭐</span>
-      <span class="star" data-rating="2">⭐</span>
-      <span class="star" data-rating="3">⭐</span>
-      <span class="star" data-rating="4">⭐</span>
-      <span class="star" data-rating="5">⭐</span>
+    <div class="brand-bar">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">${bizName}</div>
+        <div class="brand-sub">Share your experience</div>
+      </div>
     </div>
-    <div class="feedback-box" id="feedbackBox">
-      <textarea id="feedbackText" placeholder="What could we have done better? (optional)"></textarea>
+    <div class="question">${customerName ? 'Hi ' + customerName + ', how did we do?' : 'How did we do?'}</div>
+    <p class="question-sub">Tap a star to rate your recent experience.</p>
+    <div class="stars" id="starsRow">
+      ${[1,2,3,4,5].map(n => `
+      <button class="star-btn" data-rating="${n}" onclick="selectStar(${n})" aria-label="${n} star">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <polygon class="star-fill" points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#FBBF24" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </button>`).join('')}
     </div>
-    <button class="btn" id="submitBtn" onclick="submitRating()">Submit →</button>
+    <div class="star-labels"><span>Poor</span><span>Excellent</span></div>
+    <button class="submit-btn" id="submitBtn" onclick="submitRating()">Continue →</button>
   </div>
-  <div class="thanks" id="thanksView">
-    <div class="thanks-icon" id="thanksIcon">🎉</div>
-    <div class="thanks-title" id="thanksTitle">Thanks for the feedback!</div>
-    <div class="thanks-sub" id="thanksSub"></div>
-    ${googleLink ? '<a href="' + googleLink + '" class="google-btn" id="googleBtn" style="display:none;">Leave a Google Review ⭐</a>' : ''}
+
+  <!-- Private chat view (1-3 stars) -->
+  <div id="chatView">
+    <div class="chat-header">
+      <div class="chat-av">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <div>
+        <div class="chat-title">${bizName} — Private Feedback</div>
+        <div class="chat-status"><div class="chat-dot"></div>Confidential · Not posted publicly</div>
+      </div>
+    </div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="chatInput" placeholder="Type your message..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="chat-send" onclick="sendChatMsg()">
+        <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+    <button class="chat-end-btn" id="chatEndBtn" onclick="endChat()">Done — submit my feedback</button>
   </div>
-  <div class="brand">Powered by Netify Builds</div>
+
+  <!-- Thanks view -->
+  <div id="thanksView">
+    <div class="thanks-icon" id="thanksIconWrap"></div>
+    <div class="thanks-title" id="thanksTitle"></div>
+    <p class="thanks-sub" id="thanksSub"></p>
+    <a href="${googleLink}" class="google-btn" id="googleBtn" style="display:none;">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Leave a Google Review
+    </a>
+  </div>
+
+  <div class="poweredby">Powered by Netify Builds</div>
 </div>
+
 <script>
 var BACKEND = 'https://botbuilder-backend-production.up.railway.app';
 var BIZ_KEY = '${key}';
+var BIZ_NAME = '${bizName}';
 var GOOGLE_LINK = '${googleLink}';
+var CUSTOMER_NAME = '${customerName}';
 var selectedRating = 0;
+var chatMessages = [];
+var chatDone = false;
+var msgCount = 0;
 
-document.querySelectorAll('.star').forEach(function(star, i) {
-  star.addEventListener('click', function() {
-    selectedRating = parseInt(this.getAttribute('data-rating'));
-    document.querySelectorAll('.star').forEach(function(s, j) {
-      s.classList.toggle('selected', j < selectedRating);
-    });
-    document.getElementById('submitBtn').style.display = 'block';
-    if (selectedRating <= 3) {
-      document.getElementById('feedbackBox').style.display = 'block';
-    } else {
-      document.getElementById('feedbackBox').style.display = 'none';
-    }
+function selectStar(rating) {
+  selectedRating = rating;
+  document.querySelectorAll('.star-btn').forEach(function(btn) {
+    var r = parseInt(btn.getAttribute('data-rating'));
+    btn.classList.toggle('active', r <= rating);
   });
-  star.addEventListener('mouseover', function() {
-    var r = parseInt(this.getAttribute('data-rating'));
-    document.querySelectorAll('.star').forEach(function(s, j) {
-      s.style.filter = j < r ? 'grayscale(0)' : 'grayscale(1)';
-      s.style.opacity = j < r ? '1' : '0.4';
-    });
-  });
-  star.addEventListener('mouseout', function() {
-    document.querySelectorAll('.star').forEach(function(s, j) {
-      s.style.filter = j < selectedRating ? 'grayscale(0)' : 'grayscale(1)';
-      s.style.opacity = j < selectedRating ? '1' : '0.4';
-    });
-  });
-});
+  document.getElementById('submitBtn').style.display = 'block';
+}
 
 async function submitRating() {
   if (!selectedRating) return;
-  var feedback = document.getElementById('feedbackText') ? document.getElementById('feedbackText').value.trim() : '';
   var btn = document.getElementById('submitBtn');
-  btn.textContent = 'Submitting...';
+  btn.textContent = 'Loading...';
   btn.disabled = true;
 
-  try {
-    await fetch(BACKEND + '/review-feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: feedback, customerName: '${customerName}' })
-    });
-  } catch(e) {}
+  if (selectedRating >= 4) {
+    // Log positive and show Google redirect
+    try {
+      await fetch(BACKEND + '/review-feedback', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ bizKey: BIZ_KEY, rating: selectedRating, feedback: '', customerName: CUSTOMER_NAME })
+      });
+    } catch(e) {}
+    showThanks(true);
+  } else {
+    // Launch private chatbot
+    document.getElementById('rateView').style.display = 'none';
+    document.getElementById('chatView').style.display = 'block';
+    setTimeout(function() { startFeedbackChat(); }, 300);
+  }
+}
 
+function showThanks(isPositive) {
   document.getElementById('rateView').style.display = 'none';
+  document.getElementById('chatView').style.display = 'none';
   var tv = document.getElementById('thanksView');
   tv.style.display = 'block';
 
-  if (selectedRating >= 4) {
-    document.getElementById('thanksIcon').textContent = '🎉';
+  if (isPositive) {
+    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" style="width:32px;height:32px;"><circle cx="12" cy="12" r="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+    document.getElementById('thanksIconWrap').style.background = '#dcfce7';
     document.getElementById('thanksTitle').textContent = 'So glad you had a great experience!';
     document.getElementById('thanksSub').textContent = 'Would you mind sharing that on Google? It helps us a lot and only takes a minute.';
-    if (GOOGLE_LINK) {
-      var gb = document.getElementById('googleBtn');
-      if (gb) gb.style.display = 'inline-block';
-    }
+    if (GOOGLE_LINK) document.getElementById('googleBtn').style.display = 'inline-flex';
   } else {
-    document.getElementById('thanksIcon').textContent = '🙏';
-    document.getElementById('thanksTitle').textContent = 'Thanks for letting us know.';
-    document.getElementById('thanksSub').textContent = 'We take all feedback seriously and will use this to improve. Sorry we fell short — we will do better.';
+    document.getElementById('thanksIconWrap').innerHTML = '<svg viewBox="0 0 24 24" style="width:32px;height:32px;"><circle cx="12" cy="12" r="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/><path d="M12 8v4m0 4h.01" stroke="#2563eb" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+    document.getElementById('thanksIconWrap').style.background = '#dbeafe';
+    document.getElementById('thanksTitle').textContent = 'Thank you for the feedback.';
+    document.getElementById('thanksSub').textContent = 'We take every experience seriously. This has been shared privately with the team and we\'ll use it to do better.';
   }
+}
+
+// ── PRIVATE CHATBOT ──
+function addMsg(text, role) {
+  var div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  var container = document.getElementById('chatMessages');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  if (role === 'user') {
+    chatMessages.push({ role: 'user', content: text });
+  } else {
+    chatMessages.push({ role: 'assistant', content: text });
+  }
+}
+
+function showTyping() {
+  var div = document.createElement('div');
+  div.className = 'typing';
+  div.id = 'typingIndicator';
+  div.innerHTML = '<span></span><span></span><span></span>';
+  var container = document.getElementById('chatMessages');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+async function startFeedbackChat() {
+  var typing = showTyping();
+  var systemPrompt = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. Your job is to understand what went wrong in a warm, non-defensive way. Ask one question at a time. Start by acknowledging the rating and asking what happened. Then ask follow-up questions to understand the root cause — what specifically went wrong, whether they were contacted, and whether anything could have been done to fix it. After 3-4 exchanges, thank them sincerely and let them know their feedback has been shared with the team privately and will be used to improve. Keep responses short, warm, and human. Never be defensive or make excuses. Never ask for their name or contact info.';
+  
+  try {
+    var res = await fetch(BACKEND + '/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'I left a ' + selectedRating + ' star rating.' }],
+        systemPrompt: systemPrompt,
+        bizKey: BIZ_KEY,
+        isAdminSession: false,
+        chatType: 'review_feedback'
+      })
+    });
+    var data = await res.json();
+    try { typing.remove(); } catch(e) {}
+    var reply = (data && data.reply) || 'Thank you for taking the time to share your experience. Could you tell me a little about what happened?';
+    addMsg(reply, 'bot');
+    chatMessages = [{ role: 'assistant', content: reply }];
+  } catch(e) {
+    try { typing.remove(); } catch(e2) {}
+    addMsg('Thank you for the rating. Could you tell me a little about what happened?', 'bot');
+  }
+}
+
+async function sendChatMsg() {
+  var input = document.getElementById('chatInput');
+  var text = input.value.trim();
+  if (!text || chatDone) return;
+  input.value = '';
+  input.style.height = 'auto';
+  addMsg(text, 'user');
+  msgCount++;
+
+  if (msgCount >= 4) {
+    document.getElementById('chatEndBtn').style.display = 'block';
+  }
+
+  var typing = showTyping();
+  var systemPrompt = 'You are a private, empathetic feedback assistant for ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the conversation warmly. Ask follow-up questions to understand what went wrong. After 3-4 exchanges total, thank them sincerely and let them know their feedback has been shared with the team privately. Keep responses short and human. Never be defensive.';
+
+  try {
+    var res = await fetch(BACKEND + '/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: chatMessages.slice(-8),
+        systemPrompt: systemPrompt,
+        bizKey: BIZ_KEY,
+        isAdminSession: false,
+        chatType: 'review_feedback'
+      })
+    });
+    var data = await res.json();
+    try { typing.remove(); } catch(e) {}
+    var reply = (data && data.reply) || 'Thank you for sharing that with us.';
+    // Strip any LEAD_CAPTURED triggers just in case
+    reply = reply.replace(/LEAD_CAPTURED\|.*/g, '').trim();
+    addMsg(reply, 'bot');
+  } catch(e) {
+    try { typing.remove(); } catch(e2) {}
+    addMsg('Thank you for sharing that.', 'bot');
+  }
+}
+
+async function endChat() {
+  if (chatDone) return;
+  chatDone = true;
+  document.getElementById('chatInput').disabled = true;
+  document.getElementById('chatEndBtn').disabled = true;
+
+  // Log the conversation and feedback
+  var fullConversation = chatMessages.map(function(m) { return m.content; }).join(' | ');
+  try {
+    await fetch(BACKEND + '/review-feedback', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        bizKey: BIZ_KEY,
+        rating: selectedRating,
+        feedback: fullConversation,
+        customerName: CUSTOMER_NAME,
+        conversation: chatMessages
+      })
+    });
+    // Also log to conversation inbox
+    await fetch(BACKEND + '/log-conversation', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        bizKey: BIZ_KEY,
+        bizName: BIZ_NAME,
+        messages: chatMessages,
+        leadCaptured: false,
+        leadName: CUSTOMER_NAME || 'Review Feedback (' + selectedRating + ' stars)',
+        leadPhone: '',
+        leadJobType: selectedRating + '-star review feedback',
+        timestamp: new Date().toISOString()
+      })
+    });
+  } catch(e) {}
+
+  showThanks(false);
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMsg();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
 }
 </script>
 </body>
