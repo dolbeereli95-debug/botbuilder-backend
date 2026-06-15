@@ -2755,7 +2755,7 @@ function showTyping() {
 
 async function startPositiveChat() {
   var typing = showTyping();
-  var sp = 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. You are genuinely happy they had a great experience. Ask them what stood out most. Then ask who helped them or what the job was for, and how the overall experience felt. Keep it to 3 questions total across the conversation. After getting enough detail, tell them you are going to put together a Google review they can copy and post. Keep responses short and warm. Do not use emojis. Do not use em dashes. Do not use bullet points. Do not output LEAD_CAPTURED.';
+  var sp = 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer just gave a ' + selectedRating + '-star rating. You are genuinely happy they had a great experience. Ask them what stood out most. Then ask who helped them or what the job was for. Then ask how the overall experience felt. Keep it to 3 questions total. After the 3rd answer, wrap up warmly with something like: "Thank you so much for sharing that, it means a lot to the team! Let me put that together for you now." Then stop. Do not write the review in the chat. Keep responses short. No emojis. No em dashes. No bullet points. Do not output LEAD_CAPTURED.';
   try {
     var res = await fetch(BACKEND + '/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ messages: [{ role: 'user', content: 'I just gave ' + selectedRating + ' stars.' }], systemPrompt: sp, bizKey: BIZ_KEY, isAdminSession: false, chatType: 'review_feedback' }) });
     var data = await res.json();
@@ -2800,7 +2800,7 @@ async function sendChatMsg() {
   if (msgCount >= 3) document.getElementById('chatEndBtn').style.display = 'block';
   var typing = showTyping();
   var sp = isPositiveFlow
-    ? 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the warm conversation. You have asked what stood out, who helped them, and how the overall experience felt. After 3 exchanges total wrap up warmly and tell them you are putting together a Google review they can copy and post. Keep responses short and warm. Do not use emojis. Do not use em dashes. Do not output LEAD_CAPTURED.'
+    ? 'You are a warm, friendly person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue the warm conversation. After 3-4 exchanges total, wrap up with something like: "Thank you so much for sharing that, it means a lot to the team! Let me put that together for you now." Then stop. Do not draft the review in the chat. The review will be generated separately. Keep responses short and warm. No emojis. No em dashes. Do not output LEAD_CAPTURED.'
     : 'You are a warm, empathetic person following up on behalf of ' + BIZ_NAME + '. A customer gave a ' + selectedRating + '-star rating. Continue listening warmly. Ask thoughtful follow-up questions. After 3-4 exchanges total, thank them sincerely and let them know the owner will see this personally. Keep it conversational and human. Never be defensive. Do not use emojis. Do not use em dashes. Do not collect contact info. Do not output LEAD_CAPTURED.';
   try {
     var msgs = chatMessages.slice(-8);
@@ -2813,10 +2813,46 @@ async function sendChatMsg() {
     if (reply.indexOf('LEAD_CAPTURED|') !== -1) { reply = reply.substring(0, reply.indexOf('LEAD_CAPTURED|')).trim(); }
     if (!reply) reply = 'Thank you for sharing that.';
     addMsg(reply, 'bot');
+
+    // Save progress after every exchange
+    saveProgress();
+
+    // Auto-trigger endChat if bot signals it is wrapping up
+    var doneSignals = ['let me put that together', 'put together a', 'putting that together', 'thank you so much for taking the time', 'means a lot to the team', 'really appreciate you sharing'];
+    var replyLower = reply.toLowerCase();
+    var botIsDone = doneSignals.some(function(s) { return replyLower.indexOf(s) !== -1; });
+    if (botIsDone && !chatDone) {
+      setTimeout(function() { endChat(); }, 1200);
+    }
+
+    // Also auto-trigger after 6 messages regardless
+    if (msgCount >= 6 && !chatDone) {
+      setTimeout(function() { endChat(); }, 1200);
+    }
+
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
     addMsg('Sorry, something went wrong. Please try again.', 'bot');
   }
+}
+
+function saveProgress() {
+  if (chatDone || chatMessages.length === 0) return;
+  try {
+    var full = chatMessages.map(function(m) { return m.content; }).join(' | ');
+    fetch(BACKEND + '/review-feedback', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        bizKey: BIZ_KEY,
+        rating: selectedRating,
+        feedback: full,
+        customerName: CUSTOMER_NAME,
+        conversation: chatMessages,
+        partial: true
+      })
+    }).catch(function() {});
+  } catch(e) {}
 }
 
 async function endChat() {
