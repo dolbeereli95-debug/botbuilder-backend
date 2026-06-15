@@ -2764,13 +2764,12 @@ async function sendChatMsg() {
     try { typing.remove(); } catch(e) {}
     var reply = (data && data.reply) || 'Thank you for sharing that with us.';
     // Strip any LEAD_CAPTURED triggers just in case
-    reply = reply.replace(/LEAD_CAPTURED\|[^\n]*/g, '').trim();
+    if (reply.indexOf('LEAD_CAPTURED|') !== -1) { reply = reply.substring(0, reply.indexOf('LEAD_CAPTURED|')).trim(); }
     if (!reply) reply = 'Thank you for sharing that with us.';
     addMsg(reply, 'bot');
   } catch(e) {
     try { typing.remove(); } catch(e2) {}
-    console.error('[review chat error]', e);
-    addMsg('Error: ' + (e && e.message ? e.message : JSON.stringify(e)), 'bot');
+    addMsg('Sorry, something went wrong. Please try again.', 'bot');
   }
 }
 
