@@ -1708,10 +1708,7 @@ app.post('/reseller-create-bot', async (req, res) => {
     debouncedSave('reseller_info.json', resellerInfo);
 
     const clientSetupLink = BACKEND_URL + '/reseller-client-setup/' + bizKey;
-    const embedCode = '<script>
-window.__nb={bizKey:'' + bizKey + '',bizName:' + JSON.stringify(bizName) + ',botName:' + JSON.stringify(bizName + ' Assistant') + ',accentColor:'' + (accentColor || '#0A2540') + '',backend:'' + BACKEND_URL + '',leadEmail:' + JSON.stringify(resellerInfo[rKey].email) + ',whiteLabel:true};
-</script>
-<script src="https://netifybuilds.com/widget-loader.js"></script>';
+    const embedCode = '<script>\nwindow.__nb={bizKey:\'' + bizKey + '\',bizName:' + JSON.stringify(bizName) + ',botName:' + JSON.stringify(bizName + ' Assistant') + ',accentColor:\'' + (accentColor || '#0A2540') + '\',backend:\'' + BACKEND_URL + '\',leadEmail:' + JSON.stringify(resellerInfo[rKey].email) + ',whiteLabel:true};\n<\/script>\n<script src="https://netifybuilds.com/widget-loader.js"><\/script>';
 
     res.json({ success: true, bizKey, clientSetupLink, embedCode });
   } catch(e) {
