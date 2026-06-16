@@ -245,6 +245,7 @@ app.get('/', (req, res) => {
 
 app.post('/chat', rateLimit, async (req, res) => {
   const { messages, systemPrompt, bizKey, isAdminSession: clientAdminFlag, chatType } = req.body;
+  const clientKey = bizKey ? bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '') : null;
 
   // Domain validation -- check the widget is being used from a registered domain
   const origin = req.headers.origin || req.headers.referer || '';
@@ -261,7 +262,6 @@ app.post('/chat', rateLimit, async (req, res) => {
   // Check activation status — allow trial messages if not yet activated
   // Skip activation check for review feedback chatbot
   if (bizKey && chatType !== 'review_feedback' && !(clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')] && clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')].isResellerBot)) {
-    const clientKey = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
     const client = clientInfo[clientKey];
     if (client && client.activated === false) {
       const TRIAL_LIMIT = 7;
