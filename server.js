@@ -250,7 +250,7 @@ app.post('/chat', rateLimit, async (req, res) => {
   const origin = req.headers.origin || req.headers.referer || '';
   if (bizKey && clientInfo[bizKey.toLowerCase()]) {
     const client = clientInfo[bizKey.toLowerCase()];
-    if (client.domain && origin && chatType !== 'review_feedback' && !origin.includes(client.domain) && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('netifybuilds') && !origin.includes('railway.app')) {
+    if (client.domain && origin && chatType !== 'review_feedback' && !client.isResellerBot && !origin.includes(client.domain) && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('netifybuilds') && !origin.includes('railway.app')) {
       console.warn('[Domain Mismatch]', bizKey, 'called from', origin, 'expected', client.domain);
       return res.status(403).json({ reply: 'Unauthorized domain.' });
     }
@@ -260,7 +260,7 @@ app.post('/chat', rateLimit, async (req, res) => {
   }
   // Check activation status — allow trial messages if not yet activated
   // Skip activation check for review feedback chatbot
-  if (bizKey && chatType !== 'review_feedback') {
+  if (bizKey && chatType !== 'review_feedback' && !(clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')] && clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')].isResellerBot)) {
     const clientKey = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
     const client = clientInfo[clientKey];
     if (client && client.activated === false) {
@@ -611,7 +611,9 @@ Never use markdown.${siteContext}`;
 
     // If the reply doesn't have LEAD_CAPTURED but contains what looks like
     // a phone number and name together, flag it as a potential missed capture
-    if (!reply.includes('LEAD_CAPTURED|')) {
+    // Skip lead detection entirely for faq_only bots
+    const clientBotMode = clientKey ? (clientInfo[clientKey] && clientInfo[clientKey].botMode) : null;
+    if (!reply.includes('LEAD_CAPTURED|') && clientBotMode !== 'faq_only') {
       const hasPhone = /(\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4})/.test(reply);
       const hasName = /(?:my name is|i'm|i am|this is)\s+[A-Z][a-z]+/i.test(reply);
       const lastUserMsg = trimmedMessages[trimmedMessages.length - 1]?.content || '';
@@ -742,10 +744,20 @@ app.post('/lead', async (req, res) => {
   const { name, phone, jobType, urgency, businessEmail, businessName, ownerPhone, bizKey, conversation } = req.body;
   if (!businessEmail) return res.status(400).json({ error: 'businessEmail is required' });
 
-  // Look up owner phone from clientInfo if not provided directly
+  // Look up owner phone and bot mode from clientInfo
   const clientKey = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
   const clientRecord = clientKey ? clientInfo[clientKey] : null;
   const resolvedOwnerPhone = normalizePhone(ownerPhone || (clientRecord && clientRecord.phone));
+  const botMode = (clientRecord && clientRecord.botMode) || 'lead_capture';
+
+  // Adapt email labels to bot mode
+  const emailLabels = {
+    lead_capture:        { header: 'New Lead Captured', jobLabel: 'Job type', urgencyLabel: 'Urgency', subjectPrefix: 'New Lead' },
+    reservation_request: { header: 'New Reservation Request', jobLabel: 'Details', urgencyLabel: 'Party size', subjectPrefix: 'Reservation Request' },
+    appointment_request: { header: 'New Appointment Request', jobLabel: 'Service needed', urgencyLabel: 'Preferred time', subjectPrefix: 'Appointment Request' },
+    faq_only:            { header: 'New Message', jobLabel: 'Topic', urgencyLabel: 'Status', subjectPrefix: 'New Message' },
+  };
+  const labels = emailLabels[botMode] || emailLabels.lead_capture;
 
   // SMS ALERT (Twilio)
   if (resolvedOwnerPhone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
@@ -804,10 +816,10 @@ app.post('/lead', async (req, res) => {
         from: 'onboarding@netifybuilds.com',
         to: businessEmail,
         bcc: 'dolbeereli95@gmail.com',
-        subject: (urgency && (urgency.toLowerCase().includes('urgent') || urgency.toLowerCase().includes('emergency')) ? '🚨 URGENT — ' : '') + 'New Lead: ' + (name || 'Someone') + (phone ? ' · ' + phone : '') + ' via ' + (businessName || 'your website'),
+        subject: (urgency && (urgency.toLowerCase().includes('urgent') || urgency.toLowerCase().includes('emergency')) ? '🚨 URGENT — ' : '') + labels.subjectPrefix + ': ' + (name || 'Someone') + (phone ? ' · ' + phone : '') + ' via ' + (businessName || 'your website'),
         html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:0;background:#f8fafc;border-radius:16px;overflow:hidden;">
           <div style="background:#0A2540;padding:20px 24px;text-align:center;">
-            <p style="color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 4px;">New Lead Captured</p>
+            <p style="color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 4px;">${labels.header}</p>
             <h1 style="color:white;font-size:1.4rem;font-weight:800;margin:0;">${name || 'New visitor'}</h1>
           </div>
           <div style="padding:24px;">
@@ -815,8 +827,8 @@ app.post('/lead', async (req, res) => {
               <table style="width:100%;border-collapse:collapse;">
                 <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#94a3b8;width:80px;">Name</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;">${name || 'Not provided'}</td></tr>
                 <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#94a3b8;">Phone</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;">${phone || 'Not provided'}</td></tr>
-                <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#94a3b8;">Job</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;">${jobType || 'Not specified'}</td></tr>
-                <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">Urgency</td><td style="padding:8px 0;"><span style="background:${urgencyBg};color:${urgencyColor};font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;">${urgency || 'Normal'}</span></td></tr>
+                <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#94a3b8;">${labels.jobLabel}</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;">${jobType || 'Not specified'}</td></tr>
+                <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">${labels.urgencyLabel}</td><td style="padding:8px 0;"><span style="background:${urgencyBg};color:${urgencyColor};font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;">${urgency || 'Normal'}</span></td></tr>
               </table>
             </div>
             ${summaryBlock}
@@ -1042,6 +1054,47 @@ function buildQuickReplies(data) {
     question: replies.slice(0, 4),
     emergency: emergencyReplies.slice(0, 4)
   };
+}
+
+// ── INDUSTRY-AWARE SYSTEM PROMPT BUILDER FOR RESELLER BOTS ──
+function buildResellerSystemPrompt(client) {
+  const bizName = client.bizName || 'this business';
+  const botName = client.botName || bizName + ' Assistant';
+  const services = client.services || '';
+  const hours = client.hours || '';
+  const area = client.area || '';
+  const faqs = client.faqs || '';
+  const differentiators = client.differentiators || '';
+  const phone = client.phone || '';
+  const botMode = client.botMode || 'lead_capture';
+  const reservationUrl = client.reservationUrl || '';
+  const reservationPhone = client.reservationPhone || phone;
+  const onlineOrderUrl = client.onlineOrderUrl || '';
+
+  const base = 'You are ' + botName + ', the AI chat assistant for ' + bizName + '. Keep every response to 2-3 sentences. Be friendly and conversational, not a salesperson. Never use markdown, bullet points, bold text, or emojis. Plain conversational sentences only.\n\nABOUT THE BUSINESS:\nBusiness Name: ' + bizName + (services ? '\nServices: ' + services : '') + (hours ? '\nHours: ' + hours : '') + (area ? '\nLocation/Area: ' + area : '') + (differentiators ? '\nWhat sets us apart: ' + differentiators : '') + (faqs ? '\nFAQs: ' + faqs : '') + '\n\n';
+
+  if (botMode === 'reservation_request') {
+    return base + 'YOUR JOB: Help customers with questions and take reservation or booking requests.\n\n' +
+      'RESERVATIONS: When someone wants to book a table or make a reservation, collect their name, date, time, and party size through natural conversation. Then confirm: "Got it — [name], party of [size] on [date] at [time]. Someone will confirm your reservation shortly." Once collected output on its own line:\nLEAD_CAPTURED|[name]|[phone if given, else Not provided]|Reservation: [date] [time] party of [size]|Not specified\n\n' +
+      (reservationUrl ? 'ONLINE RESERVATIONS: You can also direct them to book online at: ' + reservationUrl + '\n' : '') +
+      (reservationPhone ? 'PHONE RESERVATIONS: Or call us at ' + reservationPhone + '\n' : '') +
+      'NEVER: Make up menu items or prices. Confirm a reservation is definitely booked — always say someone will confirm. Use markdown.';
+  }
+
+  if (botMode === 'appointment_request') {
+    return base + 'YOUR JOB: Help customers with questions and schedule appointment requests.\n\n' +
+      'APPOINTMENTS: When someone wants to schedule, collect their name, preferred date/time, and what they need help with. Then confirm: "Got it — I will have someone reach out to confirm your appointment." Once collected output on its own line:\nLEAD_CAPTURED|[name]|[phone if given, else Not provided]|Appointment request: [service] [preferred time]|Not specified\n\n' +
+      'NEVER: Confirm an appointment is booked — always say someone will confirm. Make up availability. Use markdown.';
+  }
+
+  if (botMode === 'faq_only') {
+    return base + 'YOUR JOB: Answer questions about the business, products, and services. Be helpful and direct.\n\n' +
+      'If someone wants to contact the business or needs something you cannot help with, direct them to reach out directly' + (phone ? ' at ' + phone : '') + '.\n\n' +
+      'NEVER: Collect personal information unless the customer specifically asks you to pass along a message. Use markdown. Make up product details or prices.';
+  }
+
+  // Default: lead_capture (service businesses)
+  return base + 'LEAD COLLECTION: When someone asks for a quote, callback, or service, collect their name and phone number naturally. Once you have both confirm: "Got it, [name] at [number] — someone will be in touch shortly." Then output on its own line:\nLEAD_CAPTURED|[name]|[phone]|[job type or Not specified]|[urgency or Not specified]\n\nNever show this trigger. Never mention it.\n\nNEVER: Use markdown. Make up prices. Be pushy. Say someone is on their way before collecting contact info.';
 }
 
 function buildSystemPrompt(data) {
@@ -1536,6 +1589,532 @@ app.post('/review-lead', async (req, res) => {
 
 // ── CLIENT INFO STORE (persistent) ──
 const clientInfo = loadData('client_info.json', {});
+
+// ── RESELLER STORE (persistent) ──
+const resellerInfo = loadData('reseller_info.json', {});
+
+// Reseller Stripe price IDs
+const RESELLER_CREDIT_PRICE   = 'price_1TiNBHPVUoVHUfbhEGEDVpyI'; // $150 one-time
+const RESELLER_MONTHLY_PRICE  = 'price_1TimwvPVUoVHUfbhcS4uYbDl'; // $100/month per bot
+const BACKEND_URL = 'https://botbuilder-backend-production.up.railway.app';
+
+// ── RESELLER SIGNUP ──
+app.post('/reseller-signup', async (req, res) => {
+  try {
+    const { name, email, agencyName, website } = req.body;
+    if (!name || !email) return res.status(400).json({ error: 'name and email required' });
+
+    // Generate unique reseller key
+    const resellerKey = (agencyName || name).toLowerCase().replace(/[^a-z0-9]/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+
+    resellerInfo[resellerKey] = {
+      name, email, agencyName: agencyName || name, website: website || '',
+      registeredAt: new Date().toISOString(),
+      bots: [], // list of bizKeys they created
+      credits: 0,
+    };
+    debouncedSave('reseller_info.json', resellerInfo);
+
+    // Notify Eli
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'New reseller signup: ' + (agencyName || name),
+        html: '<div style="font-family:sans-serif;padding:24px;background:#eff6ff;border-radius:12px;"><h2 style="color:#1d4ed8;">New Reseller</h2><p><strong>Name:</strong> ' + name + '</p><p><strong>Agency:</strong> ' + (agencyName || 'N/A') + '</p><p><strong>Email:</strong> ' + email + '</p><p><strong>Reseller Key:</strong> ' + resellerKey + '</p></div>'
+      })
+    }).catch(() => {});
+
+    // Welcome email to reseller
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: email,
+        subject: 'Welcome to Netify Builds Reseller Program',
+        html: '<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;"><h2 style="color:#0A2540;">Welcome to Netify Builds</h2><p style="color:#374151;font-size:14px;">Hey ' + name + ', you are all set. Here is your reseller dashboard access:</p><div style="background:white;border-radius:10px;padding:20px;border:1px solid #e5e7eb;margin:16px 0;"><p style="font-size:13px;margin:0 0 8px;"><strong>Dashboard:</strong> <a href="https://netifybuilds.com/reseller">netifybuilds.com/reseller</a></p><p style="font-size:13px;margin:0;"><strong>Your access code:</strong> <span style="font-family:monospace;font-weight:700;color:#15803d;">' + resellerKey + '</span></p></div><p style="color:#374151;font-size:14px;">From your dashboard you can create bots for clients, get embed codes, and activate when ready. Each activation is $150 + $100/month per active bot.</p><p style="color:#374151;font-size:14px;">Questions? Email me at netifybuilds@gmail.com or text 937-367-1847.</p><p style="color:#374151;font-size:14px;">Eli</p></div>'
+      })
+    }).catch(() => {});
+
+    res.json({ success: true, resellerKey });
+  } catch(e) {
+    console.error('[Reseller Signup Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── RESELLER LOGIN ──
+app.post('/reseller-login', (req, res) => {
+  const { resellerKey } = req.body;
+  if (!resellerKey) return res.status(400).json({ error: 'resellerKey required' });
+  const key = resellerKey.toLowerCase().trim();
+  const reseller = resellerInfo[key];
+  if (!reseller) return res.status(404).json({ error: 'Reseller account not found' });
+  // Return reseller info + their bots with stats
+  const bots = (reseller.bots || []).map(bizKey => {
+    const bot = clientInfo[bizKey] || {};
+    const stats = analyticsLogs[bizKey] || { conversations: 0, leads: 0 };
+    return {
+      bizKey,
+      bizName: bot.bizName,
+      activated: bot.activated,
+      plan: bot.plan,
+      registeredAt: bot.registeredAt,
+      activatedAt: bot.activatedAt,
+      siteScanned: bot.siteScanned || false,
+      clientSetupCompleted: !!bot.clientSetupCompletedAt,
+      botMode: bot.botMode || 'lead_capture',
+      stats: {
+        conversations: stats.conversations || 0,
+        leads: stats.leads || 0,
+        conversionRate: stats.conversations > 0 ? Math.round((stats.leads / stats.conversations) * 100) + '%' : '0%'
+      }
+    };
+  });
+  res.json({ success: true, reseller: { name: reseller.name, agencyName: reseller.agencyName, email: reseller.email }, bots });
+});
+
+// ── RESELLER CREATE BOT ──
+app.post('/reseller-create-bot', async (req, res) => {
+  try {
+    const { resellerKey, bizName, industry, accentColor, website } = req.body;
+    if (!resellerKey || !bizName) return res.status(400).json({ error: 'resellerKey and bizName required' });
+    const rKey = resellerKey.toLowerCase().trim();
+    if (!resellerInfo[rKey]) return res.status(404).json({ error: 'Reseller not found' });
+
+    const bizKey = bizName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') + '_' + Math.floor(1000 + Math.random() * 9000);
+
+    // Create client record with reseller flag
+    clientInfo[bizKey] = {
+      bizName, plan: 'bot', email: resellerInfo[rKey].email,
+      botColor: accentColor || '#0A2540',
+      industry: industry || '',
+      website: website || '',
+      activated: false,
+      isResellerBot: true,
+      resellerKey: rKey,
+      registeredAt: new Date().toISOString(),
+      // Suppress Netify Builds branding
+      whiteLabel: true,
+    };
+    debouncedSave('client_info.json', clientInfo);
+
+    // Add to reseller's bot list
+    if (!resellerInfo[rKey].bots) resellerInfo[rKey].bots = [];
+    resellerInfo[rKey].bots.push(bizKey);
+    debouncedSave('reseller_info.json', resellerInfo);
+
+    const clientSetupLink = BACKEND_URL + '/reseller-client-setup/' + bizKey;
+    const embedCode = '<script>
+window.__nb={bizKey:'' + bizKey + '',bizName:' + JSON.stringify(bizName) + ',botName:' + JSON.stringify(bizName + ' Assistant') + ',accentColor:'' + (accentColor || '#0A2540') + '',backend:'' + BACKEND_URL + '',leadEmail:' + JSON.stringify(resellerInfo[rKey].email) + ',whiteLabel:true};
+</script>
+<script src="https://netifybuilds.com/widget-loader.js"></script>';
+
+    res.json({ success: true, bizKey, clientSetupLink, embedCode });
+  } catch(e) {
+    console.error('[Reseller Create Bot Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── RESELLER ACTIVATE BOT ──
+app.post('/reseller-activate', async (req, res) => {
+  try {
+    const { resellerKey, bizKey } = req.body;
+    if (!resellerKey || !bizKey) return res.status(400).json({ error: 'resellerKey and bizKey required' });
+    const rKey = resellerKey.toLowerCase().trim();
+    const reseller = resellerInfo[rKey];
+    if (!reseller) return res.status(404).json({ error: 'Reseller not found' });
+    if (!clientInfo[bizKey]) return res.status(404).json({ error: 'Bot not found' });
+    if (clientInfo[bizKey].resellerKey !== rKey) return res.status(403).json({ error: 'Not your bot' });
+    if (clientInfo[bizKey].activated) return res.json({ success: true, alreadyActivated: true });
+    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' });
+
+    // Create Stripe customer for reseller if not exists
+    let stripeCustomerId = reseller.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({ email: reseller.email, name: reseller.agencyName || reseller.name, metadata: { resellerKey: rKey } });
+      stripeCustomerId = customer.id;
+      resellerInfo[rKey].stripeCustomerId = stripeCustomerId;
+      debouncedSave('reseller_info.json', resellerInfo);
+    }
+
+    // Create checkout session — $150 one-time + $100/month subscription
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: stripeCustomerId,
+      line_items: [
+        { price: RESELLER_CREDIT_PRICE, quantity: 1 },
+      ],
+      payment_intent_data: { metadata: { bizKey, resellerKey: rKey, type: 'reseller_activation' } },
+      success_url: BACKEND_URL + '/reseller-activation-success?bizKey=' + bizKey + '&resellerKey=' + rKey + '&session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: 'https://netifybuilds.com/reseller?cancelled=1',
+      metadata: { bizKey, resellerKey: rKey }
+    });
+
+    res.json({ success: true, checkoutUrl: session.url });
+  } catch(e) {
+    console.error('[Reseller Activate Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── RESELLER ACTIVATION SUCCESS ──
+app.get('/reseller-activation-success', async (req, res) => {
+  const { bizKey, resellerKey, session_id } = req.query;
+  if (!bizKey || !resellerKey || !session_id) return res.redirect('https://netifybuilds.com/reseller');
+  try {
+    if (stripe) {
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+      if (session.payment_status === 'paid') {
+        // Activate the bot
+        clientInfo[bizKey].activated = true;
+        clientInfo[bizKey].activatedAt = new Date().toISOString();
+        clientInfo[bizKey].stripeCustomerId = session.customer;
+        debouncedSave('client_info.json', clientInfo);
+
+        // Start $100/month subscription for this bot
+        if (stripe && resellerInfo[resellerKey] && resellerInfo[resellerKey].stripeCustomerId) {
+          try {
+            const sub = await stripe.subscriptions.create({
+              customer: resellerInfo[resellerKey].stripeCustomerId,
+              items: [{ price: RESELLER_MONTHLY_PRICE }],
+              trial_end: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // first month covered by $150 activation
+              metadata: { bizKey, resellerKey, type: 'reseller_monthly' }
+            });
+            clientInfo[bizKey].resellerSubscriptionId = sub.id;
+            debouncedSave('client_info.json', clientInfo);
+          } catch(subErr) {
+            console.error('[Reseller Monthly Sub Error]', subErr.message);
+          }
+        }
+
+        // Notify Eli
+        fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: 'onboarding@netifybuilds.com',
+            to: 'dolbeereli95@gmail.com',
+            subject: 'Reseller bot activated: ' + (clientInfo[bizKey].bizName || bizKey),
+            html: '<div style="font-family:sans-serif;padding:24px;background:#f0fdf4;border-radius:12px;"><h2 style="color:#15803d;">Reseller Bot Live</h2><p><strong>Bot:</strong> ' + (clientInfo[bizKey].bizName || bizKey) + '</p><p><strong>Reseller:</strong> ' + (resellerInfo[resellerKey] && resellerInfo[resellerKey].agencyName) + '</p><p><strong>Charged:</strong> $150 activation + $100/month started</p></div>'
+          })
+        }).catch(() => {});
+      }
+    }
+  } catch(e) { console.error('[Reseller Success Error]', e.message); }
+  res.redirect('https://netifybuilds.com/reseller?activated=1&bizKey=' + bizKey);
+});
+
+// ── RESELLER SCAN URL — manual scan from dashboard ──
+app.post('/reseller-scan-url', async (req, res) => {
+  try {
+    const { resellerKey, bizKey, url } = req.body;
+    if (!resellerKey || !bizKey || !url) return res.status(400).json({ error: 'resellerKey, bizKey, and url required' });
+    const rKey = resellerKey.toLowerCase().trim();
+    if (!resellerInfo[rKey]) return res.status(404).json({ error: 'Reseller not found' });
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key] || clientInfo[key].resellerKey !== rKey) return res.status(403).json({ error: 'Not your bot' });
+
+    // Fetch the URL
+    const fetchRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NetifyBuilds/1.0)' } });
+    const html = await fetchRes.text();
+
+    // Strip HTML tags to get text
+    const pageText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 8000);
+
+    // Forward to scan endpoint logic
+    const scanReq = { body: { bizKey: key, pageText, pageUrl: url } };
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: 'You are reading text scraped from a business website. Your job is to:\n\n1. Identify the business type (e.g. restaurant, salon, HVAC, plumber, dentist, retail, e-commerce, law firm, gym, etc.)\n2. Extract all business information you can confidently find\n3. Determine the right bot behavior for this business type\n\nReturn JSON only, no other text. Use this exact structure:\n{\n  "bizName": "",\n  "ownerName": "",\n  "services": "",\n  "hours": "",\n  "area": "",\n  "phone": "",\n  "email": "",\n  "faqs": "",\n  "differentiators": "",\n  "bizType": "",\n  "botMode": "",\n  "reservationUrl": "",\n  "reservationPhone": "",\n  "onlineOrderUrl": ""\n}\n\nRules:\n- Only include what you are confident about — leave as empty string if unsure, never guess\n- bizType: one of "service_business", "restaurant", "salon_spa", "retail", "ecommerce", "medical_dental", "legal", "fitness", "other"\n- botMode: one of "lead_capture" (for service businesses that send technicians), "reservation_request" (for restaurants/salons that need bookings), "faq_only" (for retail/ecommerce where people just have questions), "appointment_request" (for medical/dental/fitness that book appointments)\n- reservationUrl: if you find an OpenTable, Resy, or other reservation link\n- reservationPhone: phone number specifically for reservations if mentioned\n- onlineOrderUrl: if you find a link for online ordering (restaurants)\n\nWebsite text:\n' + pageText }]
+    });
+
+    let extracted = {};
+    try {
+      extracted = JSON.parse(response.content[0].text.replace(/```json|```/g, '').trim());
+    } catch(e) { return res.status(500).json({ error: 'Could not parse extracted data' }); }
+
+    const fields = ['bizName','ownerName','services','hours','area','phone','faqs','differentiators'];
+    fields.forEach(function(field) {
+      if (extracted[field] && !clientInfo[key][field]) clientInfo[key][field] = extracted[field];
+    });
+    if (extracted.email && !clientInfo[key].email) clientInfo[key].email = extracted.email;
+    if (extracted.bizType) clientInfo[key].bizType = extracted.bizType;
+    if (extracted.botMode) clientInfo[key].botMode = extracted.botMode;
+    if (extracted.reservationUrl) clientInfo[key].reservationUrl = extracted.reservationUrl;
+    if (extracted.reservationPhone) clientInfo[key].reservationPhone = extracted.reservationPhone;
+    if (extracted.onlineOrderUrl) clientInfo[key].onlineOrderUrl = extracted.onlineOrderUrl;
+    clientInfo[key].siteScanned = true;
+    clientInfo[key].siteScannedAt = new Date().toISOString();
+    clientInfo[key].siteScannedUrl = url;
+    debouncedSave('client_info.json', clientInfo);
+
+    res.json({ success: true, extracted });
+  } catch(e) {
+    console.error('[Reseller Scan URL Error]', e.message);
+    res.status(500).json({ error: 'Could not fetch or scan that URL. Make sure it is publicly accessible.' });
+  }
+});
+
+// ── RESELLER SITE SCAN — auto-extracts business info from page content ──
+app.post('/reseller-scan-site', async (req, res) => {
+  try {
+    const { bizKey, pageText, pageUrl } = req.body;
+    if (!bizKey || !pageText) return res.status(400).json({ error: 'bizKey and pageText required' });
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client = clientInfo[key];
+    if (!client || !client.isResellerBot) return res.status(403).json({ error: 'Not a reseller bot' });
+    if (client.siteScanned) return res.json({ success: true, alreadyScanned: true });
+
+    // Use Claude to extract business info from page text
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: 'You are reading text scraped from a business website. Your job is to:\n\n1. Identify the business type (e.g. restaurant, salon, HVAC, plumber, dentist, retail, e-commerce, law firm, gym, etc.)\n2. Extract all business information you can confidently find\n3. Determine the right bot behavior for this business type\n\nReturn JSON only, no other text. Use this exact structure:\n{\n  "bizName": "",\n  "ownerName": "",\n  "services": "",\n  "hours": "",\n  "area": "",\n  "phone": "",\n  "email": "",\n  "faqs": "",\n  "differentiators": "",\n  "bizType": "",\n  "botMode": "",\n  "reservationUrl": "",\n  "reservationPhone": "",\n  "onlineOrderUrl": ""\n}\n\nRules:\n- Only include what you are confident about — leave as empty string if unsure, never guess\n- bizType: one of "service_business", "restaurant", "salon_spa", "retail", "ecommerce", "medical_dental", "legal", "fitness", "other"\n- botMode: one of "lead_capture" (for service businesses that send technicians), "reservation_request" (for restaurants/salons that need bookings), "faq_only" (for retail/ecommerce where people just have questions), "appointment_request" (for medical/dental/fitness that book appointments)\n- reservationUrl: if you find an OpenTable, Resy, or other reservation link\n- reservationPhone: phone number specifically for reservations if mentioned\n- onlineOrderUrl: if you find a link for online ordering (restaurants)\n\nWebsite text:\n' + pageText.substring(0, 6000)
+      }]
+    });
+
+    let extracted = {};
+    try {
+      const raw = response.content[0].text.replace(/```json|```/g, '').trim();
+      extracted = JSON.parse(raw);
+    } catch(e) {
+      console.error('[Site Scan] Parse error:', e.message);
+      return res.json({ success: false, error: 'Could not parse extracted data' });
+    }
+
+    // Save extracted data to clientInfo — only fill in blanks, don't overwrite existing
+    const fields = ['bizName','ownerName','services','hours','area','phone','faqs','differentiators'];
+    fields.forEach(function(field) {
+      if (extracted[field] && !client[field]) {
+        client[field] = extracted[field];
+      }
+    });
+    if (extracted.email && !client.email) client.email = extracted.email;
+    if (extracted.bizType) client.bizType = extracted.bizType;
+    if (extracted.botMode) client.botMode = extracted.botMode;
+    if (extracted.reservationUrl) client.reservationUrl = extracted.reservationUrl;
+    if (extracted.reservationPhone) client.reservationPhone = extracted.reservationPhone;
+    if (extracted.onlineOrderUrl) client.onlineOrderUrl = extracted.onlineOrderUrl;
+
+    client.siteScanned = true;
+    client.siteScannedAt = new Date().toISOString();
+    client.siteScannedUrl = pageUrl || '';
+    debouncedSave('client_info.json', clientInfo);
+
+    console.log('[Site Scan] Extracted data for', key, ':', Object.keys(extracted).filter(k => extracted[k]));
+    res.json({ success: true, extracted });
+  } catch(e) {
+    console.error('[Site Scan Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── RESELLER CLIENT SETUP PAGE ──
+// The link sent to the end client to fill in their business info
+app.get('/reseller-client-setup/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const bot = clientInfo[key] || {};
+  const bizName = bot.bizName || 'your business';
+  const accentColor = bot.botColor || '#0A2540';
+  const prefill = {
+    bizName: bot.bizName || '',
+    ownerName: bot.ownerName || '',
+    email: bot.email || '',
+    phone: bot.phone || '',
+    services: bot.services || '',
+    hours: bot.hours || '',
+    area: bot.area || '',
+    faqs: bot.faqs || '',
+    differentiators: bot.differentiators || '',
+  };
+  const wasScanned = bot.siteScanned ? true : false;
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Set Up Your Chat Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#F8FAFC;color:#0F172A;min-height:100vh;}
+.wrap{max-width:580px;margin:0 auto;padding:40px 24px 80px;}
+.badge{display:inline-flex;align-items:center;gap:6px;background:#EFF6FF;color:#2563EB;font-size:12px;font-weight:600;padding:5px 12px;border-radius:99px;margin-bottom:20px;}
+h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.75rem;font-weight:800;margin-bottom:10px;letter-spacing:-0.02em;}
+.sub{font-size:15px;color:#64748B;line-height:1.7;margin-bottom:32px;}
+.card{background:white;border-radius:16px;padding:28px;border:1px solid #E2E8F0;margin-bottom:16px;}
+.card h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;margin-bottom:16px;color:#0F172A;}
+.field{margin-bottom:14px;}
+label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:5px;}
+input,textarea,select{width:100%;padding:11px 14px;border:1.5px solid #E2E8F0;border-radius:10px;font-family:inherit;font-size:14px;color:#0F172A;outline:none;transition:border-color 0.2s;}
+input:focus,textarea:focus,select:focus{border-color:${accentColor};}
+textarea{resize:vertical;min-height:80px;}
+.submit-btn{width:100%;padding:15px;border-radius:99px;background:${accentColor};color:white;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px;}
+.success{display:none;text-align:center;padding:40px 24px;}
+.success h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.4rem;font-weight:800;margin-bottom:10px;}
+.success p{font-size:15px;color:#64748B;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="formView">
+    <div class="badge">Chat Assistant Setup</div>
+    <h1>Tell us about ${bizName}</h1>
+    <p class="sub">Your web developer has set up a chat assistant for your website. Fill this out so we can customize it for your business. Takes about 3 minutes.</p>
+
+    ${wasScanned ? '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#1D4ED8;line-height:1.6;"><strong>We scanned your website</strong> and pre-filled what we found. Review everything below and fill in anything we missed.</div>' : ''}
+    <div class="card">
+      <h2>Basic Info</h2>
+      <div class="field"><label>Business name</label><input id="f_bizName" value="${prefill.bizName}" placeholder="Smith HVAC" /></div>
+      <div class="field"><label>Your name</label><input id="f_ownerName" value="${prefill.ownerName}" placeholder="John Smith" /></div>
+      <div class="field"><label>Best email for lead notifications</label><input id="f_email" type="email" value="${prefill.email}" placeholder="john@smithhvac.com" /></div>
+      <div class="field"><label>Phone (for lead notifications)</label><input id="f_phone" type="tel" value="${prefill.phone}" placeholder="937-555-0182" /></div>
+    </div>
+
+    <div class="card">
+      <h2>About Your Business</h2>
+      <div class="field"><label>What services do you offer?</label><textarea id="f_services" placeholder="AC repair, furnace installation, heat pump service...">${prefill.services}</textarea></div>
+      <div class="field"><label>Business hours</label><input id="f_hours" value="${prefill.hours}" placeholder="Mon-Fri 8am-6pm, Sat 9am-2pm" /></div>
+      <div class="field"><label>Service area</label><input id="f_area" value="${prefill.area}" placeholder="Dayton, Kettering, Beavercreek and surrounding areas" /></div>
+    </div>
+
+    <div class="card">
+      <h2>Common Questions (optional)</h2>
+      <div class="field"><label>Any FAQs you want the bot to know?</label><textarea id="f_faqs" placeholder="Do you offer free estimates? Yes, we offer free estimates on all installations...">${prefill.faqs}</textarea></div>
+      <div class="field"><label>What sets you apart from competitors?</label><textarea id="f_diff" placeholder="Family owned since 1985, 24/7 emergency service, 100% satisfaction guarantee...">${prefill.differentiators}</textarea></div>
+    </div>
+
+    <button class="submit-btn" onclick="submitSetup()">Complete My Setup</button>
+    <div id="setupError" style="display:none;color:#ef4444;font-size:13px;text-align:center;margin-top:12px;"></div>
+  </div>
+
+  <div class="success" id="successView">
+    <div style="font-size:48px;margin-bottom:16px;">✓</div>
+    <h2>You are all set!</h2>
+    <p>Your chat assistant is being configured. Your web developer will let you know when it is live on your site.</p>
+  </div>
+</div>
+<script>
+var BIZ_KEY = '${key}';
+var BACKEND = 'https://botbuilder-backend-production.up.railway.app';
+
+async function submitSetup() {
+  var bizName = document.getElementById('f_bizName').value.trim();
+  var email = document.getElementById('f_email').value.trim();
+  if (!bizName || !email) { document.getElementById('setupError').textContent = 'Please fill in your business name and email.'; document.getElementById('setupError').style.display = 'block'; return; }
+  try {
+    var res = await fetch(BACKEND + '/reseller-client-setup-submit', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        bizKey: BIZ_KEY,
+        bizName: bizName,
+        ownerName: document.getElementById('f_ownerName').value.trim(),
+        email: email,
+        phone: document.getElementById('f_phone').value.trim(),
+        services: document.getElementById('f_services').value.trim(),
+        hours: document.getElementById('f_hours').value.trim(),
+        area: document.getElementById('f_area').value.trim(),
+        faqs: document.getElementById('f_faqs').value.trim(),
+        differentiators: document.getElementById('f_diff').value.trim(),
+      })
+    });
+    var data = await res.json();
+    if (data.success) {
+      document.getElementById('formView').style.display = 'none';
+      document.getElementById('successView').style.display = 'block';
+    } else {
+      document.getElementById('setupError').textContent = 'Something went wrong. Please try again.';
+      document.getElementById('setupError').style.display = 'block';
+    }
+  } catch(e) {
+    document.getElementById('setupError').textContent = 'Could not connect. Please try again.';
+    document.getElementById('setupError').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>`);
+});
+
+// ── RESELLER CLIENT SETUP SUBMIT ──
+app.post('/reseller-client-setup-submit', async (req, res) => {
+  try {
+    const { bizKey, bizName, ownerName, email, phone, services, hours, area, faqs, differentiators } = req.body;
+    if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Bot not found' });
+
+    // Update client info with what the client filled out
+    Object.assign(clientInfo[key], {
+      bizName: bizName || clientInfo[key].bizName,
+      ownerName: ownerName || '',
+      email: email || clientInfo[key].email,
+      phone: phone || '',
+      services: services || '',
+      hours: hours || '',
+      area: area || '',
+      faqs: faqs || '',
+      differentiators: differentiators || '',
+      clientSetupCompletedAt: new Date().toISOString(),
+    });
+
+    // Auto-generate system prompt based on business type
+    if (!clientInfo[key].systemPrompt) {
+      clientInfo[key].systemPrompt = buildResellerSystemPrompt(clientInfo[key]);
+    }
+    debouncedSave('client_info.json', clientInfo);
+
+    // Notify the reseller
+    const rKey = clientInfo[key].resellerKey;
+    if (rKey && resellerInfo[rKey]) {
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: resellerInfo[rKey].email,
+          subject: bizName + ' completed their setup',
+          html: '<div style="font-family:sans-serif;padding:24px;background:#f0fdf4;border-radius:12px;"><h2 style="color:#15803d;">' + bizName + ' is ready</h2><p>Your client just completed their business setup. Log into your reseller dashboard to review and activate their bot.</p><p><a href="https://netifybuilds.com/reseller">Go to dashboard</a></p></div>'
+        })
+      }).catch(() => {});
+    }
+
+    // Also notify Eli
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'Reseller client setup complete: ' + bizName,
+        html: '<div style="font-family:sans-serif;padding:24px;"><h3>Client setup complete</h3><p><strong>Business:</strong> ' + bizName + '</p><p><strong>Email:</strong> ' + email + '</p><p><strong>BizKey:</strong> ' + key + '</p></div>'
+      })
+    }).catch(() => {});
+
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[Client Setup Submit Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 app.post('/register-client', (req, res) => {
   const { bizKey, bizName, plan, email, googleReviewLink, domain, secret } = req.body;
   if (!bizKey) return res.status(400).json({ error: 'bizKey required' });
@@ -1690,8 +2269,9 @@ async function checkTriggerCampaigns() {
     ],
   };
 
-  // Only run on the 1st of each month to avoid spamming
-  if (day !== 1) return;
+  // Only run on the 1st of each quarter (Jan, Apr, Jul, Oct)
+  const quarterMonths = [1, 4, 7, 10];
+  if (day !== 1 || !quarterMonths.includes(month)) return;
 
   for (const bizKey of Object.keys(clientInfo)) {
     try {
@@ -1708,17 +2288,32 @@ async function checkTriggerCampaigns() {
     if (!trigger) continue;
 
     // Check we haven't already sent this month
-    const lastKey = 'triggered_' + bizKey + '_' + now.getFullYear() + '_' + month;
+    const quarter = Math.ceil(month / 3);
+    const lastKey = 'triggered_' + bizKey + '_' + now.getFullYear() + '_Q' + quarter;
     if (client[lastKey]) continue;
 
     // Check if Twilio is configured
     if (!process.env.TWILIO_ACCOUNT_SID) continue;
 
-    // Get their customer list from sms jobs
-    const logs = reviewLogs[bizKey] || [];
-    const customers = [...new Set(logs.filter(r => r.customerPhone).map(r => ({ phone: r.customerPhone, name: r.customerName || '' })))];
+    // Get their customer list - prefer uploaded campaign contacts, fall back to review SMS logs
+    let customers = [];
+    if (client.campaignContacts && client.campaignContacts.length > 0) {
+      customers = client.campaignContacts;
+    } else {
+      const logs = reviewLogs[bizKey] || [];
+      const seen = new Set();
+      logs.filter(r => r.customerPhone).forEach(r => {
+        if (!seen.has(r.customerPhone)) {
+          seen.add(r.customerPhone);
+          customers.push({ phone: r.customerPhone, name: r.customerName || '' });
+        }
+      });
+    }
 
-    if (customers.length === 0) continue;
+    if (customers.length === 0) {
+      console.log('[Trigger Campaign] No customer list for', bizKey, '- skipping');
+      continue;
+    }
 
     console.log('[Trigger Campaign] Firing for', bizKey, 'industry:', industry, 'month:', month, 'customers:', customers.length);
 
@@ -2520,6 +3115,36 @@ var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. Mind
 </html>`);
 
   } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+});
+
+// ── UPLOAD CAMPAIGN CUSTOMER LIST ──
+app.post('/upload-campaign-list', async (req, res) => {
+  try {
+    const { bizKey, contacts } = req.body;
+    if (!bizKey || !contacts || !Array.isArray(contacts)) return res.status(400).json({ error: 'bizKey and contacts required' });
+    const key = bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+    clientInfo[key].campaignContacts = contacts;
+    clientInfo[key].campaignListSize = contacts.length + ' contacts';
+    clientInfo[key].campaignListUpdated = new Date().toISOString();
+    debouncedSave('client_info.json', clientInfo);
+    console.log('[Campaign List] Saved', contacts.length, 'contacts for', key);
+    // Notify Eli
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'Campaign list uploaded -- ' + (clientInfo[key].bizName || key),
+        html: '<div style="font-family:sans-serif;padding:24px;"><h3>Customer list uploaded</h3><p><strong>' + (clientInfo[key].bizName || key) + '</strong> uploaded a campaign list with <strong>' + contacts.length + ' contacts</strong>.</p><p>Campaigns will fire automatically next quarter.</p></div>'
+      })
+    }).catch(() => {});
+    res.json({ success: true, count: contacts.length });
+  } catch(e) {
+    console.error('[Upload Campaign List Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── CRM WEBHOOK — fires review SMS when job is completed ──
