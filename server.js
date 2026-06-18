@@ -2256,30 +2256,43 @@ async function checkTriggerCampaigns() {
   const day = now.getDate();
 
   // Seasonal triggers by industry
+  // Campaign triggers — months aligned to quarterly firing: Jan(1), Apr(4), Jul(7), Oct(10)
   const seasonalTriggers = {
     'HVAC': [
-      { months: [4, 5], message: 'Summer is coming fast. Have you had your AC checked yet? A quick tune-up now can save you from a breakdown on the hottest day of the year. Reply STOP to opt out.' },
-      { months: [9, 10], message: 'Cold weather is right around the corner. Get your furnace checked before the first freeze so you are not scrambling when it matters most. Reply STOP to opt out.' },
+      { months: [1],  message: 'Winter is here and your furnace is working overtime. If it has been more than a year since your last tune-up, now is a good time to get it checked before something goes wrong in the cold. Reply STOP to opt out.' },
+      { months: [4],  message: 'Summer is about six weeks away. Getting your AC checked now means you are not scrambling when the first heat wave hits. Most tune-ups take under an hour. Reply STOP to opt out.' },
+      { months: [7],  message: 'Peak summer is here. If your AC has been struggling to keep up or your energy bill looks higher than usual, it might be worth having someone take a look before it gets worse. Reply STOP to opt out.' },
+      { months: [10], message: 'Cold weather is on its way. A quick furnace check now is a lot easier than dealing with a breakdown on the coldest night of the year. Reply STOP to opt out.' },
     ],
     'Plumbing': [
-      { months: [11, 12], message: 'Frozen pipes are one of the most expensive plumbing emergencies. A quick winterization check now can save you thousands. Reply STOP to opt out.' },
-      { months: [3, 4], message: 'Spring is a great time to check for any pipe damage from winter. Catch small leaks before they become big problems. Reply STOP to opt out.' },
+      { months: [1],  message: 'Frozen pipes are one of the most expensive plumbing emergencies. If you have not had your pipes checked for winter, it is worth a quick look before temperatures drop further. Reply STOP to opt out.' },
+      { months: [4],  message: 'Spring is a good time to check for any pipe or drain damage from winter. Small leaks caught early are a lot cheaper than big ones caught late. Reply STOP to opt out.' },
+      { months: [7],  message: 'Summer heat can put extra strain on water heaters and outdoor lines. If you have noticed any slow drains or low pressure, it is a good time to get it looked at. Reply STOP to opt out.' },
+      { months: [10], message: 'Before the cold sets in, it is worth having your pipes and water heater checked. A little maintenance now can save a lot of headaches over the winter. Reply STOP to opt out.' },
     ],
     'Roofing': [
-      { months: [3, 4], message: 'Winter can be tough on roofs. Spring is the perfect time for an inspection to catch any damage before summer storms. Reply STOP to opt out.' },
-      { months: [9], message: 'Before winter sets in, it is worth having your roof inspected. Small issues now can turn into big leaks when the snow hits. Reply STOP to opt out.' },
+      { months: [1],  message: 'Winter storms can do a lot of damage to roofs without it being obvious from the ground. If your roof is more than a few years old it might be worth a quick inspection before spring. Reply STOP to opt out.' },
+      { months: [4],  message: 'Spring is the best time to catch any damage winter left behind. Getting ahead of it now means repairs are simpler and cheaper before summer storms roll in. Reply STOP to opt out.' },
+      { months: [7],  message: 'Summer is storm season. If it has been a couple years since your last roof inspection it is a good idea to get one before fall. Small issues are a lot cheaper to fix than big ones. Reply STOP to opt out.' },
+      { months: [10], message: 'Before winter hits, a quick roof inspection can catch anything that might turn into a leak when the snow and ice arrive. Worth doing while the weather is still good. Reply STOP to opt out.' },
     ],
     'Landscaping': [
-      { months: [3, 4], message: 'Spring is here -- perfect time to get your yard looking great again. Reply STOP to opt out.' },
-      { months: [10], message: 'Fall cleanup time. Let us get your yard ready for winter before the first frost. Reply STOP to opt out.' },
+      { months: [1],  message: 'Late winter is a great time to plan out your yard for the season ahead. If you want to get on the schedule early before spring fills up, now is the time to reach out. Reply STOP to opt out.' },
+      { months: [4],  message: 'Spring is here. If your lawn or landscaping needs some attention after winter, we would love to help get it looking its best before summer. Reply STOP to opt out.' },
+      { months: [7],  message: 'Summer heat can be tough on lawns. If yours is looking a little worn out, a mid-season service can make a big difference heading into fall. Reply STOP to opt out.' },
+      { months: [10], message: 'Fall is a good time to get your yard cleaned up and ready for winter. Leaf removal, bed cleanup, and a final cut goes a long way. Reply STOP to opt out.' },
     ],
     'Cleaning Service': [
-      { months: [3, 4], message: 'Spring cleaning season is here. Book now before our schedule fills up. Reply STOP to opt out.' },
-      { months: [11], message: 'The holidays are coming. Let us get your home guest-ready before the rush. Reply STOP to opt out.' },
+      { months: [1],  message: 'New year is a great time for a deep clean. If you want to start fresh, we would love to help get your home back to feeling its best. Reply STOP to opt out.' },
+      { months: [4],  message: 'Spring cleaning season is here. If your home is due for a thorough clean after the winter months, we have availability and would love to help. Reply STOP to opt out.' },
+      { months: [7],  message: 'Summer is a busy time but your home still deserves some attention. If you have been putting off a deep clean, now is a great time to get it done. Reply STOP to opt out.' },
+      { months: [10], message: 'The holidays are coming up faster than you think. Getting your home cleaned before the season hits means one less thing to worry about. Reply STOP to opt out.' },
     ],
     'Pest Control': [
-      { months: [4, 5], message: 'Pest season is starting. Get ahead of it with a preventative treatment now before infestations start. Reply STOP to opt out.' },
-      { months: [9], message: 'As temperatures drop pests look for warm places to hide -- like your home. A fall treatment keeps them out. Reply STOP to opt out.' },
+      { months: [1],  message: 'Winter drives pests indoors looking for warmth. If you have noticed any signs of activity, a preventative treatment now can keep things from getting worse. Reply STOP to opt out.' },
+      { months: [4],  message: 'Pest season is starting up. A preventative treatment in early spring is the best way to stay ahead of it before activity picks up. Reply STOP to opt out.' },
+      { months: [7],  message: 'Summer is peak season for ants, roaches, and mosquitoes. If you have not had a treatment recently, now is a good time before things get worse. Reply STOP to opt out.' },
+      { months: [10], message: 'As temperatures drop, pests start looking for warm places to settle in for winter. A fall treatment keeps them from making your home theirs. Reply STOP to opt out.' },
     ],
   };
 
