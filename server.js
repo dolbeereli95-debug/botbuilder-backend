@@ -261,18 +261,21 @@ app.post('/chat', rateLimit, async (req, res) => {
   }
   // Check activation status — allow trial messages if not yet activated
   // Skip activation check for review feedback chatbot
-  if (bizKey && chatType !== 'review_feedback' && !(clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')] && clientInfo[(bizKey||'').toLowerCase().replace(/[^a-z0-9_]/g,'')].isResellerBot)) {
-    const client = clientInfo[clientKey];
-    if (client && client.activated === false) {
+  const clientRecord = clientInfo[clientKey];
+  // Reseller bots that aren't activated yet show a coming soon message
+  if (clientRecord && clientRecord.isResellerBot && !clientRecord.activated) {
+    return res.json({ reply: 'This assistant is almost ready! Check back soon.' });
+  }
+  // Regular clients get 7 trial messages
+  if (bizKey && chatType !== 'review_feedback') {
+    if (clientRecord && clientRecord.activated === false) {
       const TRIAL_LIMIT = 7;
-      const used = client.trialMessagesUsed || 0;
+      const used = clientRecord.trialMessagesUsed || 0;
       if (used >= TRIAL_LIMIT) {
         return res.status(403).json({ error: 'trial_exhausted' });
       }
-      // Allow trial message — increment counter
-      client.trialMessagesUsed = used + 1;
+      clientRecord.trialMessagesUsed = used + 1;
       debouncedSave('client_info.json', clientInfo);
-      // Flag response as trial so widget can show countdown
       req._trialRemaining = TRIAL_LIMIT - (used + 1);
     }
   }
