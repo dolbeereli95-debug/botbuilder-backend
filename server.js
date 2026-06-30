@@ -1305,6 +1305,15 @@ app.post('/signup', async (req, res) => {
        googleReviewLink: googleReviewLink || '',
        campaignListSize: campaignListSize || '',
        campaignListFormat: campaignListFormat || '',
+       campaignContacts: (function() {
+         var raw = req.body.campaignContactsRaw || '';
+         if (!raw.trim()) return [];
+         return raw.trim().split('\n').filter(function(l){ return l.trim(); }).map(function(line) {
+           var parts = line.split(',').map(function(p){ return p.trim(); });
+           if (parts.length >= 2) return { name: parts[0], phone: parts.slice(1).join(',').trim() };
+           return { name: '', phone: parts[0] };
+         }).filter(function(c){ return c.phone; });
+       })(),
        domain: clientDomain,
        botName: botName || (bizName + ' Assistant'),
        botColor: botColor || '#0A2540',
@@ -2349,7 +2358,10 @@ async function checkTriggerCampaigns() {
     for (const customer of customers.slice(0, 100)) {
       try {
         const firstName = customer.name ? customer.name.split(' ')[0] : '';
-        const message = firstName ? 'Hey ' + firstName + '! ' + trigger.message : trigger.message;
+        const bizName = client.bizName || '';
+        const greeting = firstName ? 'Hey ' + firstName + '! ' : 'Hey! ';
+        const intro = bizName ? 'This is ' + bizName + '. ' : '';
+        const message = greeting + intro + trigger.message;
         await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
           method: 'POST',
           headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -2388,15 +2400,138 @@ async function checkTriggerCampaigns() {
 checkTriggerCampaigns();
 setInterval(checkTriggerCampaigns, 24 * 60 * 60 * 1000);
 
-// Manual trigger endpoint for testing
+// Manual trigger endpoint — fires global scheduled campaigns (admin use)
 app.post('/trigger-campaigns', async (req, res) => {
-    try {
-const { secret } = req.body;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
-  await checkTriggerCampaigns();
-  res.json({ success: true });
-
+  try {
+    const { secret } = req.body;
+    if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+    await checkTriggerCampaigns();
+    res.json({ success: true });
   } catch(e) { console.error('[/trigger-campaigns Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+});
+
+// Manual trigger for a SPECIFIC client — fires immediately regardless of date
+app.post('/trigger-campaign-now', async (req, res) => {
+  try {
+    const { secret, bizKey, customMessage } = req.body;
+    // Allow admin with secret, OR client triggering their own campaign (no secret needed if bizKey provided)
+    if (secret && secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+    if (!secret && !bizKey) return res.status(403).json({ error: 'Unauthorized' });
+    const key = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client = clientInfo[key];
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    if (!client.activated) return res.status(400).json({ error: 'Client not activated' });
+
+    // Get customer list
+    let customers = [];
+    if (client.campaignContacts && client.campaignContacts.length > 0) {
+      customers = client.campaignContacts;
+    } else {
+      const logs = reviewLogs[key] || [];
+      const seen = new Set();
+      logs.filter(r => r.customerPhone).forEach(r => {
+        if (!seen.has(r.customerPhone)) {
+          seen.add(r.customerPhone);
+          customers.push({ phone: r.customerPhone, name: r.customerName || '' });
+        }
+      });
+    }
+    if (customers.length === 0) return res.status(400).json({ error: 'No customer list found' });
+
+    // Get message — use custom message or pick the current quarter message
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const industry = client.industry || '';
+    const seasonalTriggersCopy = {
+      'HVAC': [
+        { months: [1], message: 'Winter is here and your furnace is working overtime. If it has been more than a year since your last tune-up, now is a good time to get it checked before something goes wrong in the cold. Reply STOP to opt out.' },
+        { months: [4], message: 'Summer is about six weeks away. Getting your AC checked now means you are not scrambling when the first heat wave hits. Most tune-ups take under an hour. Reply STOP to opt out.' },
+        { months: [7], message: 'Peak summer is here. If your AC has been struggling to keep up or your energy bill looks higher than usual, it might be worth having someone take a look before it gets worse. Reply STOP to opt out.' },
+        { months: [10], message: 'Cold weather is on its way. A quick furnace check now is a lot easier than dealing with a breakdown on the coldest night of the year. Reply STOP to opt out.' },
+      ],
+      'Plumbing': [
+        { months: [1], message: 'Frozen pipes are one of the most expensive plumbing emergencies. If you have not had your pipes checked for winter, it is worth a quick look before temperatures drop further. Reply STOP to opt out.' },
+        { months: [4], message: 'Spring is a good time to check for any pipe or drain damage from winter. Small leaks caught early are a lot cheaper than big ones caught late. Reply STOP to opt out.' },
+        { months: [7], message: 'Summer heat can put extra strain on water heaters and outdoor lines. If you have noticed any slow drains or low pressure, it is a good time to get it looked at. Reply STOP to opt out.' },
+        { months: [10], message: 'Before the cold sets in, it is worth having your pipes and water heater checked. A little maintenance now can save a lot of headaches over the winter. Reply STOP to opt out.' },
+      ],
+      'Roofing': [
+        { months: [1], message: 'Winter storms can do a lot of damage to roofs without it being obvious from the ground. If your roof is more than a few years old it might be worth a quick inspection before spring. Reply STOP to opt out.' },
+        { months: [4], message: 'Spring is the best time to catch any damage winter left behind. Getting ahead of it now means repairs are simpler and cheaper before summer storms roll in. Reply STOP to opt out.' },
+        { months: [7], message: 'Summer is storm season. If it has been a couple years since your last roof inspection it is a good idea to get one before fall. Small issues are a lot cheaper to fix than big ones. Reply STOP to opt out.' },
+        { months: [10], message: 'Before winter hits, a quick roof inspection can catch anything that might turn into a leak when the snow and ice arrive. Worth doing while the weather is still good. Reply STOP to opt out.' },
+      ],
+      'Landscaping': [
+        { months: [1], message: 'Late winter is a great time to plan out your yard for the season ahead. If you want to get on the schedule early before spring fills up, now is the time to reach out. Reply STOP to opt out.' },
+        { months: [4], message: 'Spring is here. If your lawn or landscaping needs some attention after winter, we would love to help get it looking its best before summer. Reply STOP to opt out.' },
+        { months: [7], message: 'Summer heat can be tough on lawns. If yours is looking a little worn out, a mid-season service can make a big difference heading into fall. Reply STOP to opt out.' },
+        { months: [10], message: 'Fall is a good time to get your yard cleaned up and ready for winter. Leaf removal, bed cleanup, and a final cut goes a long way. Reply STOP to opt out.' },
+      ],
+      'Cleaning Service': [
+        { months: [1], message: 'New year is a great time for a deep clean. If you want to start fresh, we would love to help get your home back to feeling its best. Reply STOP to opt out.' },
+        { months: [4], message: 'Spring cleaning season is here. If your home is due for a thorough clean after the winter months, we have availability and would love to help. Reply STOP to opt out.' },
+        { months: [7], message: 'Summer is a busy time but your home still deserves some attention. If you have been putting off a deep clean, now is a great time to get it done. Reply STOP to opt out.' },
+        { months: [10], message: 'The holidays are coming up faster than you think. Getting your home cleaned before the season hits means one less thing to worry about. Reply STOP to opt out.' },
+      ],
+      'Pest Control': [
+        { months: [1], message: 'Winter drives pests indoors looking for warmth. If you have noticed any signs of activity, a preventative treatment now can keep things from getting worse. Reply STOP to opt out.' },
+        { months: [4], message: 'Pest season is starting up. A preventative treatment in early spring is the best way to stay ahead of it before activity picks up. Reply STOP to opt out.' },
+        { months: [7], message: 'Summer is peak season for ants, roaches, and mosquitoes. If you have not had a treatment recently, now is a good time before things get worse. Reply STOP to opt out.' },
+        { months: [10], message: 'As temperatures drop, pests start looking for warm places to settle in for winter. A fall treatment keeps them from making your home theirs. Reply STOP to opt out.' },
+      ],
+    };
+
+    // Find closest quarter message
+    const quarterMonths = [1,4,7,10];
+    const closestMonth = quarterMonths.reduce((prev, curr) => Math.abs(curr - month) < Math.abs(prev - month) ? curr : prev);
+    const triggers = seasonalTriggersCopy[industry] || [];
+    const trigger = triggers.find(t => t.months.includes(closestMonth));
+    const baseMessage = customMessage || (trigger ? trigger.message : 'Hey, just wanted to reach out and let you know we are here if you need us. Reply STOP to opt out.');
+
+    // Send
+    let sent = 0;
+    let failed = 0;
+    for (const customer of customers.slice(0, 200)) {
+      try {
+        const firstName = customer.name ? customer.name.split(' ')[0] : '';
+        const bizNameStr = client.bizName || '';
+        const greeting = firstName ? 'Hey ' + firstName + '! ' : 'Hey! ';
+        const intro = bizNameStr ? 'This is ' + bizNameStr + '. ' : '';
+        const message = greeting + intro + baseMessage;
+        await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+          method: 'POST',
+          headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(customer.phone) || customer.phone, Body: message }).toString()
+        });
+        sent++;
+      } catch(e) { failed++; }
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    // Track last sent
+    const now2 = new Date();
+    clientInfo[key].lastCampaignSentAt = now2.toISOString();
+    clientInfo[key].lastCampaignSentCount = sent;
+    clientInfo[key].campaignsSentTotal = (clientInfo[key].campaignsSentTotal || 0) + 1;
+    debouncedSave('client_info.json', clientInfo);
+
+    // Email Eli
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'Manual campaign sent — ' + (client.bizName || key),
+        html: '<div style="font-family:sans-serif;padding:24px;"><h3>Manual campaign fired</h3><p><strong>Client:</strong> ' + (client.bizName || key) + '</p><p><strong>Industry:</strong> ' + industry + '</p><p><strong>Sent:</strong> ' + sent + ' / Failed: ' + failed + '</p><p><strong>Message:</strong><br>' + baseMessage + '</p></div>'
+      })
+    }).catch(() => {});
+
+    res.json({ success: true, sent, failed, total: customers.length, message: baseMessage });
+  } catch(e) {
+    console.error('[/trigger-campaign-now Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── INBOUND SMS WEBHOOK (Twilio) ──
@@ -3142,6 +3277,429 @@ var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. Mind
 </html>`);
 
   } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+});
+
+// ══════════════════════════════════════════════════════
+// AI PHONE SYSTEM
+// ══════════════════════════════════════════════════════
+
+const BACKEND_URL = process.env.BACKEND_URL || 'https://botbuilder-backend-production.up.railway.app';
+
+// Helper: provision a Twilio phone number for a client
+async function provisionPhoneNumber(bizKey, areaCode) {
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token) throw new Error('Twilio not configured');
+
+    // Search for available numbers
+    const searchUrl = 'https://api.twilio.com/2010-04-01/Accounts/' + sid + '/AvailablePhoneNumbers/US/Local.json?AreaCode=' + (areaCode || '800') + '&VoiceEnabled=true&SmsEnabled=true';
+    const searchRes = await fetch(searchUrl, { headers: { 'Authorization': 'Basic ' + Buffer.from(sid + ':' + token).toString('base64') } });
+    const searchData = await searchRes.json();
+    if (!searchData.available_phone_numbers || searchData.available_phone_numbers.length === 0) throw new Error('No numbers available for area code ' + areaCode);
+
+    const phoneNumber = searchData.available_phone_numbers[0].phone_number;
+
+    // Purchase the number
+    const purchaseRes = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + sid + '/IncomingPhoneNumbers.json', {
+      method: 'POST',
+      headers: { 'Authorization': 'Basic ' + Buffer.from(sid + ':' + token).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        PhoneNumber: phoneNumber,
+        VoiceUrl: BACKEND_URL + '/voice/incoming/' + bizKey,
+        VoiceMethod: 'POST',
+        StatusCallbackUrl: BACKEND_URL + '/voice/status/' + bizKey,
+        StatusCallbackMethod: 'POST',
+        SmsUrl: BACKEND_URL + '/sms/incoming/' + bizKey,
+        SmsMethod: 'POST',
+        FriendlyName: 'Netify-' + bizKey
+      }).toString()
+    });
+    const purchaseData = await purchaseRes.json();
+    if (!purchaseData.phone_number) throw new Error('Purchase failed: ' + JSON.stringify(purchaseData));
+
+    return purchaseData.phone_number;
+  } catch(e) {
+    console.error('[provisionPhoneNumber Error]', e.message);
+    throw e;
+  }
+}
+
+// ── PROVISION PHONE NUMBER FOR CLIENT ──
+app.post('/voice/provision', async (req, res) => {
+  try {
+    const { secret, bizKey, areaCode } = req.body;
+    if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+    const key = (bizKey || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+    if (clientInfo[key].voiceNumber) return res.json({ success: true, number: clientInfo[key].voiceNumber, alreadyProvisioned: true });
+
+    const number = await provisionPhoneNumber(key, areaCode || clientInfo[key].areaCode || '');
+    clientInfo[key].voiceNumber = number;
+    clientInfo[key].voiceProvisionedAt = new Date().toISOString();
+    debouncedSave('client_info.json', clientInfo);
+
+    console.log('[Voice] Provisioned', number, 'for', key);
+    res.json({ success: true, number });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── INCOMING CALL HANDLER ──
+app.post('/voice/incoming/:bizKey', async (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const bizName = client.bizName || 'us';
+  const forwardTo = client.voiceForwardNumber || client.phone || '';
+  const ivrEnabled = client.voiceIvrEnabled || false;
+  const filteringEnabled = client.voiceFilteringEnabled !== false; // on by default
+  const callSid = req.body.CallSid || '';
+  const callerNumber = req.body.From || '';
+
+  // Check whitelist — if caller is whitelisted, skip screening entirely
+  const whitelist = client.voiceWhitelist || [];
+  const isWhitelisted = whitelist.some(w => {
+    const wClean = (w.phone || w).replace(/\D/g, '');
+    const callerClean = callerNumber.replace(/\D/g, '');
+    return wClean && callerClean && callerClean.endsWith(wClean);
+  });
+
+  // Log the call
+  if (!client.callLog) client.callLog = [];
+  client.callLog.unshift({ callSid, from: callerNumber, time: new Date().toISOString(), status: 'incoming', whitelisted: isWhitelisted });
+  if (client.callLog.length > 100) client.callLog = client.callLog.slice(0, 100);
+  debouncedSave('client_info.json', clientInfo);
+
+  res.set('Content-Type', 'text/xml');
+
+  // If whitelisted or filtering disabled — skip screening, go straight through
+  if (isWhitelisted || !filteringEnabled) {
+    if (ivrEnabled) {
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="' + BACKEND_URL + '/voice/gather/' + key + '" method="POST" numDigits="1" timeout="5"><Say voice="Polly.Joanna">Thank you for calling ' + bizName + '. For a quote or appointment, press 1. For emergency service, press 2. To leave a message, press 3. Or stay on the line to speak with someone.</Say></Gather><Redirect>' + BACKEND_URL + '/voice/forward/' + key + '</Redirect></Response>');
+    } else {
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you for calling ' + bizName + '. Please hold for just a moment.</Say>' + (forwardTo ? '<Dial action="' + BACKEND_URL + '/voice/dial-status/' + key + '" method="POST" timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">We missed your call. Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+    }
+    return;
+  }
+
+  // Screening question — gather reason for call before forwarding
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="' + BACKEND_URL + '/voice/screen/' + key + '" method="POST" input="speech" timeout="8" speechTimeout="2" language="en-US"><Say voice="Polly.Joanna">Thank you for calling ' + bizName + '. Can I get your name and the reason for your call today?</Say></Gather><Redirect>' + BACKEND_URL + '/voice/screen-timeout/' + key + '</Redirect></Response>');
+});
+
+// ── SCREENING HANDLER — AI classifies the caller's response ──
+app.post('/voice/screen/:bizKey', async (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const bizName = client.bizName || 'this business';
+  const bizIndustry = client.industry || 'service business';
+  const forwardTo = client.voiceForwardNumber || client.phone || '';
+  const ivrEnabled = client.voiceIvrEnabled || false;
+  const callSid = req.body.CallSid || '';
+  const speechResult = req.body.SpeechResult || '';
+  const whitelist = client.voiceWhitelist || [];
+
+  res.set('Content-Type', 'text/xml');
+
+  if (!speechResult) {
+    // No speech detected — could be robocall, send to voicemail
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">We did not catch that. Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '?type=unscreened" method="POST" maxLength="60" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+    return;
+  }
+
+  try {
+    // Check whitelist by name mention
+    const speechLower = speechResult.toLowerCase();
+    const nameWhitelisted = whitelist.some(w => w.name && speechLower.includes(w.name.toLowerCase()));
+
+    if (nameWhitelisted) {
+      // Known contact — pass straight through
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">One moment please.</Say>' + (forwardTo ? '<Dial action="' + BACKEND_URL + '/voice/dial-status/' + key + '" method="POST" timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+      return;
+    }
+
+    // AI classification
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: `You are screening calls for ${bizName}, a ${bizIndustry} business. Classify this caller as one of: CUSTOMER, VENDOR, SPAM, UNKNOWN.
+
+ALWAYS classify as SPAM if they mention:
+- Google, SEO, website ranking, online presence, digital marketing, web design
+- Credit card processing, rates, loans, merchant services
+- "We noticed your business", "inquiring about your website", "your online listing"
+- Extended warranty, vehicle warranty, insurance rates
+- "This is an important message", "final notice", "last attempt"
+- Any robocall or automated-sounding pitch
+
+ALWAYS classify as VENDOR if they:
+- Mention a company they work for and are calling to sell a product or service
+- Are a supplier, distributor, or B2B vendor
+
+ALWAYS classify as CUSTOMER if they:
+- Mention a service need, repair, quote, appointment, problem, or emergency
+- Mention the business name specifically
+- Sound like someone who needs help with something
+
+Respond with ONLY one word: CUSTOMER, VENDOR, SPAM, or UNKNOWN.
+
+Caller said: "${speechResult}"`
+      }]
+    });
+
+    const classification = (response.content[0].text || '').trim().toUpperCase();
+
+    // Update call log
+    if (client.callLog && client.callLog.length > 0) {
+      client.callLog[0].screenResult = speechResult;
+      client.callLog[0].classification = classification;
+    }
+    debouncedSave('client_info.json', clientInfo);
+
+    if (classification === 'SPAM') {
+      // Politely end the call
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you for calling. We are not interested at this time. Have a great day.</Say><Hangup/></Response>');
+    } else if (classification === 'VENDOR') {
+      // Send to generic voicemail, don't forward to owner
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you. Please leave a detailed message and we will review it and be in touch if interested.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '?type=vendor" method="POST" maxLength="60" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+    } else {
+      // CUSTOMER or UNKNOWN — put through
+      if (ivrEnabled) {
+        res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="' + BACKEND_URL + '/voice/gather/' + key + '" method="POST" numDigits="1" timeout="5"><Say voice="Polly.Joanna">Got it, let me connect you now. For a quote or appointment press 1. For emergency service press 2. Or stay on the line.</Say></Gather><Redirect>' + BACKEND_URL + '/voice/forward/' + key + '</Redirect></Response>');
+      } else {
+        res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">One moment please.</Say>' + (forwardTo ? '<Dial action="' + BACKEND_URL + '/voice/dial-status/' + key + '" method="POST" timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">We missed your call. Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+      }
+    }
+  } catch(e) {
+    console.error('[Voice Screen Error]', e.message);
+    // On error — always let the call through, never block a real customer
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">One moment please.</Say>' + (forwardTo ? '<Dial action="' + BACKEND_URL + '/voice/dial-status/' + key + '" method="POST" timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+  }
+});
+
+// ── SCREEN TIMEOUT — no speech detected ──
+app.post('/voice/screen-timeout/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const forwardTo = client.voiceForwardNumber || client.phone || '';
+  res.set('Content-Type', 'text/xml');
+  // No response at all — likely robocall, end politely
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">We did not catch that. Please call back and leave a message. Goodbye.</Say><Hangup/></Response>');
+});
+
+// ── WHITELIST MANAGEMENT ──
+app.post('/voice/whitelist/:bizKey', (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+    const { action, name, phone } = req.body;
+    if (!clientInfo[key].voiceWhitelist) clientInfo[key].voiceWhitelist = [];
+    if (action === 'add') {
+      if (!name && !phone) return res.status(400).json({ error: 'name or phone required' });
+      clientInfo[key].voiceWhitelist.push({ name: name || '', phone: phone || '', addedAt: new Date().toISOString() });
+    } else if (action === 'remove') {
+      clientInfo[key].voiceWhitelist = clientInfo[key].voiceWhitelist.filter((w, i) => i !== parseInt(req.body.index));
+    }
+    debouncedSave('client_info.json', clientInfo);
+    res.json({ success: true, whitelist: clientInfo[key].voiceWhitelist });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── IVR GATHER HANDLER ──
+app.post('/voice/gather/:bizKey', async (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const digit = req.body.Digits || '';
+  const forwardTo = client.voiceForwardNumber || client.phone || '';
+  const bizName = client.bizName || 'us';
+
+  res.set('Content-Type', 'text/xml');
+
+  if (digit === '1') {
+    // Quote or appointment
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Great. Please leave your name, number, and what you need and someone from ' + bizName + ' will call you right back.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '?type=quote" method="POST" maxLength="60" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '?type=quote"/></Response>');
+  } else if (digit === '2') {
+    // Emergency — forward immediately
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting you now for emergency service.</Say>' + (forwardTo ? '<Dial timeout="30"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">We were unable to connect you. Please leave a message and we will call back immediately.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '?type=emergency" method="POST" maxLength="60" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '?type=emergency"/></Response>');
+  } else if (digit === '3') {
+    // Leave a message
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Please leave your name, number, and message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+  } else {
+    // No input — forward to owner
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' + (forwardTo ? '<Dial timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">We missed your call. Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+  }
+});
+
+// ── FORWARD HANDLER (no IVR) ──
+app.post('/voice/forward/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const forwardTo = client.voiceForwardNumber || client.phone || '';
+  res.set('Content-Type', 'text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response>' + (forwardTo ? '<Dial action="' + BACKEND_URL + '/voice/dial-status/' + key + '" method="POST" timeout="20"><Number>' + forwardTo + '</Number></Dial>' : '') + '<Say voice="Polly.Joanna">We missed your call. Please leave a message after the tone.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+});
+
+// ── DIAL STATUS (did owner answer?) ──
+app.post('/voice/dial-status/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const dialStatus = req.body.DialCallStatus || '';
+  res.set('Content-Type', 'text/xml');
+  if (dialStatus === 'completed') {
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  } else {
+    // Owner didn't answer — go to voicemail
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">We missed your call. Please leave a message after the tone and we will get back to you shortly.</Say><Record action="' + BACKEND_URL + '/voice/voicemail/' + key + '" method="POST" maxLength="120" transcribe="true" transcribeCallback="' + BACKEND_URL + '/voice/transcribe/' + key + '"/></Response>');
+  }
+});
+
+// ── VOICEMAIL HANDLER ──
+app.post('/voice/voicemail/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key] || {};
+  const recordingUrl = req.body.RecordingUrl || '';
+  const callSid = req.body.CallSid || '';
+  const type = req.query.type || 'general';
+
+  // Store recording reference
+  if (!client.voicemails) client.voicemails = [];
+  client.voicemails.unshift({ callSid, recordingUrl, type, time: new Date().toISOString(), transcribed: false });
+  if (client.voicemails.length > 50) client.voicemails = client.voicemails.slice(0, 50);
+  debouncedSave('client_info.json', clientInfo);
+
+  res.set('Content-Type', 'text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you. We will be in touch soon. Goodbye.</Say></Response>');
+});
+
+// ── TRANSCRIPTION CALLBACK — AI SUMMARIZES AND TEXTS OWNER ──
+app.post('/voice/transcribe/:bizKey', async (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const client = clientInfo[key] || {};
+    const transcript = req.body.TranscriptionText || '';
+    const callSid = req.body.CallSid || '';
+    const type = req.query.type || 'general';
+    const ownerPhone = client.voiceForwardNumber || client.phone || '';
+
+    if (!transcript) return res.sendStatus(200);
+
+    // Use Claude to classify and summarize
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: 'You are analyzing a voicemail left for a service business called ' + (client.bizName || 'the business') + '. Classify it and summarize it in one text message to the owner. Be concise.
+
+Classify as one of: CUSTOMER (real customer with a need), VENDOR (trying to sell something), SPAM (robocall or junk), UNKNOWN.
+
+Respond in this exact format:
+TYPE: [type]
+SUMMARY: [1-2 sentence summary of what they want, their name and number if mentioned]
+ACTION: [what the owner should do, e.g. "Call back today" or "Ignore"]
+
+Voicemail transcript:
+' + transcript
+      }]
+    });
+
+    const analysis = response.content[0].text;
+    const typeMatch = analysis.match(/TYPE:\s*(\w+)/);
+    const summaryMatch = analysis.match(/SUMMARY:\s*(.+?)(?=
+ACTION:|$)/s);
+    const actionMatch = analysis.match(/ACTION:\s*(.+)/);
+
+    const callType = typeMatch ? typeMatch[1].toUpperCase() : 'UNKNOWN';
+    const summary = summaryMatch ? summaryMatch[1].trim() : transcript.substring(0, 100);
+    const action = actionMatch ? actionMatch[1].trim() : '';
+
+    // Update voicemail record
+    if (client.voicemails) {
+      const vm = client.voicemails.find(v => v.callSid === callSid);
+      if (vm) { vm.transcript = transcript; vm.summary = summary; vm.callType = callType; vm.action = action; vm.transcribed = true; }
+    }
+    debouncedSave('client_info.json', clientInfo);
+
+    // Only text owner if it's a real customer or unknown (not vendor/spam)
+    if (ownerPhone && (callType === 'CUSTOMER' || callType === 'UNKNOWN') && process.env.TWILIO_ACCOUNT_SID) {
+      const priority = type === 'emergency' ? '🚨 EMERGENCY ' : callType === 'CUSTOMER' ? '📞 ' : '';
+      const smsBody = priority + 'New voicemail for ' + (client.bizName || 'your business') + ':\n\n' + summary + (action ? '\n\nAction: ' + action : '');
+      fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+        method: 'POST',
+        headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(ownerPhone), Body: smsBody }).toString()
+      }).catch(() => {});
+    }
+
+    // Email Eli if vendor or spam so you know it's working
+    if (callType === 'VENDOR' || callType === 'SPAM') {
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'onboarding@netifybuilds.com',
+          to: 'dolbeereli95@gmail.com',
+          subject: callType + ' call filtered for ' + (client.bizName || key),
+          html: '<div style="font-family:sans-serif;padding:24px;"><h3>' + callType + ' call filtered</h3><p><strong>Client:</strong> ' + (client.bizName || key) + '</p><p><strong>Transcript:</strong> ' + transcript + '</p><p><strong>Analysis:</strong> ' + summary + '</p></div>'
+        })
+      }).catch(() => {});
+    }
+
+    res.sendStatus(200);
+  } catch(e) {
+    console.error('[Voice Transcribe Error]', e.message);
+    res.sendStatus(200);
+  }
+});
+
+// ── CALL STATUS UPDATES ──
+app.post('/voice/status/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key];
+  if (!client) return res.sendStatus(200);
+  const status = req.body.CallStatus || '';
+  const callSid = req.body.CallSid || '';
+  if (client.callLog) {
+    const call = client.callLog.find(c => c.callSid === callSid);
+    if (call) call.status = status;
+    debouncedSave('client_info.json', clientInfo);
+  }
+  res.sendStatus(200);
+});
+
+// ── UPDATE VOICE SETTINGS ──
+app.post('/voice/settings/:bizKey', (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+    const { forwardNumber, ivrEnabled, greeting } = req.body;
+    if (forwardNumber !== undefined) clientInfo[key].voiceForwardNumber = forwardNumber;
+    if (ivrEnabled !== undefined) clientInfo[key].voiceIvrEnabled = ivrEnabled;
+    if (greeting !== undefined) clientInfo[key].voiceGreeting = greeting;
+    debouncedSave('client_info.json', clientInfo);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET VOICE DATA (call log, voicemails) ──
+app.get('/voice/data/:bizKey', (req, res) => {
+  const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const client = clientInfo[key];
+  if (!client) return res.status(404).json({ error: 'Not found' });
+  res.json({
+    voiceNumber: client.voiceNumber || null,
+    forwardNumber: client.voiceForwardNumber || '',
+    ivrEnabled: client.voiceIvrEnabled || false,
+    filteringEnabled: client.voiceFilteringEnabled !== false,
+    whitelist: client.voiceWhitelist || [],
+    callLog: (client.callLog || []).slice(0, 20),
+    voicemails: (client.voicemails || []).slice(0, 10),
+    totalCalls: (client.callLog || []).length,
+    filteredCalls: (client.callLog || []).filter(c => c.classification === 'SPAM' || c.classification === 'VENDOR').length,
+  });
 });
 
 // ── UPLOAD CAMPAIGN CUSTOMER LIST ──
