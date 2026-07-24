@@ -3540,6 +3540,8 @@ app.post('/voice/screen/:bizKey', async (req, res) => {
   const callSid = req.body.CallSid || '';
   const speechResult = req.body.SpeechResult || '';
   const whitelist = client.voiceWhitelist || [];
+  console.log('[Voice Screen Debug] Full body:', JSON.stringify(req.body));
+  console.log('[Voice Screen Debug] SpeechResult:', speechResult, '| Confidence:', req.body.Confidence);
 
   res.set('Content-Type', 'text/xml');
 
