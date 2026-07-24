@@ -3526,7 +3526,7 @@ app.post('/voice/incoming/:bizKey', async (req, res) => {
   }
 
   // Screening question — gather reason for call before forwarding
-  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="' + BACKEND_URL + '/voice/screen/' + key + '" method="POST" input="speech" timeout="8" speechTimeout="2" language="en-US"><Say voice="Polly.Joanna">Thank you for calling ' + bizName + '. Can I get your name and the reason for your call today?</Say></Gather><Redirect>' + BACKEND_URL + '/voice/screen-timeout/' + key + '</Redirect></Response>');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="' + BACKEND_URL + '/voice/screen/' + key + '" method="POST" input="speech" timeout="10" speechTimeout="auto" language="en-US" speechModel="phone_call"><Say voice="Polly.Joanna">Thank you for calling ' + bizName + '. Can I get your name and the reason for your call today?</Say></Gather><Redirect>' + BACKEND_URL + '/voice/screen-timeout/' + key + '</Redirect></Response>');
 });
 
 // ── SCREENING HANDLER — AI classifies the caller's response ──
