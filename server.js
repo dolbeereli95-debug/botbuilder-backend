@@ -2367,6 +2367,7 @@ async function checkTriggerCampaigns() {
           headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(customer.phone) || customer.phone, Body: message }).toString()
         });
+        recordCampaignRecipient(customer.phone, bizKey, customer.name, industry);
         sent++;
       } catch(smsErr) {
         console.error('[Trigger SMS Error] Failed for', customer.phone, ':', smsErr.message);
@@ -2503,6 +2504,7 @@ app.post('/trigger-campaign-now', async (req, res) => {
           headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(customer.phone) || customer.phone, Body: message }).toString()
         });
+        recordCampaignRecipient(customer.phone, key, customer.name, industry);
         sent++;
       } catch(e) { failed++; }
       await new Promise(r => setTimeout(r, 200));
@@ -3279,11 +3281,151 @@ var message = 'Hey ' + firstName + '! Thanks for choosing ' + BIZ_NAME + '. Mind
   } catch(e) { console.error('[/send-page/:bizKey Error]', e.message); if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 
+
+// ══════════════════════════════════════════════════════
+// CAMPAIGN SMS REPLY HANDLING
+// ══════════════════════════════════════════════════════
+
+// Tracks which customer phone received a campaign from which client
+// Format: { normalizedPhone: { bizKey, customerName, sentAt, industry } }
+let campaignRecipients = loadData('campaign_recipients.json', {});
+
+function recordCampaignRecipient(phone, bizKey, customerName, industry) {
+  const norm = normalizePhone(phone) || phone;
+  campaignRecipients[norm] = { bizKey, customerName: customerName || '', sentAt: new Date().toISOString(), industry: industry || '' };
+  debouncedSave('campaign_recipients.json', campaignRecipients);
+}
+
+// ── INCOMING SMS HANDLER (campaign replies) ──
+app.post('/sms/incoming/:bizKey?', async (req, res) => {
+  try {
+    const fromPhone = req.body.From || '';
+    const bodyText = (req.body.Body || '').trim();
+    const norm = normalizePhone(fromPhone) || fromPhone;
+
+    res.set('Content-Type', 'text/xml');
+
+    // Handle STOP/opt-out automatically (Twilio also does this but we track it)
+    const lowerBody = bodyText.toLowerCase();
+    if (['stop','unsubscribe','cancel','end','quit','stopall'].includes(lowerBody)) {
+      if (campaignRecipients[norm]) {
+        campaignRecipients[norm].optedOut = true;
+        debouncedSave('campaign_recipients.json', campaignRecipients);
+      }
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been unsubscribed and will not receive further messages. Reply START to opt back in.</Message></Response>');
+      return;
+    }
+
+    // Find which client this reply belongs to
+    const recipient = campaignRecipients[norm];
+    if (!recipient) {
+      // Unknown sender — no campaign on record, just acknowledge
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      return;
+    }
+
+    const client = clientInfo[recipient.bizKey];
+    if (!client) {
+      res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      return;
+    }
+
+    const ownerPhone = client.voiceForwardNumber || client.phone || '';
+    const bizName = client.bizName || 'the business';
+    const customerName = recipient.customerName || 'A past customer';
+    const aiReplyEnabled = client.campaignAiReplyEnabled === true;
+
+    // Log the reply
+    if (!client.campaignReplies) client.campaignReplies = [];
+    client.campaignReplies.unshift({ from: fromPhone, name: recipient.customerName, body: bodyText, time: new Date().toISOString(), handled: false });
+    if (client.campaignReplies.length > 100) client.campaignReplies = client.campaignReplies.slice(0, 100);
+    debouncedSave('client_info.json', clientInfo);
+
+    // ── OPTION 3: AI handles the reply (premium) ──
+    if (aiReplyEnabled) {
+      try {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const aiResp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 200,
+          messages: [{
+            role: 'user',
+            content: `You are a friendly assistant replying by SMS on behalf of ${bizName}, a ${recipient.industry || 'local service'} business. A past customer received a seasonal reminder text and just replied. Reply naturally and briefly (under 300 characters, this is SMS). Your goal is to help them book or answer their question, then let them know someone will follow up to confirm. Be warm and human, not robotic. If they seem interested, ask what day or time works best for them so the owner can follow up.
+
+Customer's name: ${customerName}
+Their reply: "${bodyText}"
+
+Write only the SMS reply, nothing else.`
+          }]
+        });
+        const aiText = (aiResp.content[0].text || '').trim();
+
+        // Forward the conversation to owner too so they can take over
+        if (ownerPhone && process.env.TWILIO_ACCOUNT_SID) {
+          const notify = customerName + ' (' + fromPhone + ') replied to your campaign: "' + bodyText + '"\n\nOur AI replied: "' + aiText + '"\n\nText them at ' + fromPhone + ' to take over.';
+          fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+            method: 'POST',
+            headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(ownerPhone) || ownerPhone, Body: notify }).toString()
+          }).catch(() => {});
+        }
+
+        res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Message>' + aiText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</Message></Response>');
+        return;
+      } catch(aiErr) {
+        console.error('[Campaign AI Reply Error]', aiErr.message);
+        // Fall through to Option 1 forwarding on error
+      }
+    }
+
+    // ── OPTION 1: Forward reply to owner (default) ──
+    if (ownerPhone && process.env.TWILIO_ACCOUNT_SID) {
+      const notify = '📣 Campaign reply! ' + customerName + ' (' + fromPhone + ') replied: "' + bodyText + '"\n\nText them back at ' + fromPhone + ' to book the job.';
+      fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
+        method: 'POST',
+        headers: { 'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ From: process.env.TWILIO_PHONE_NUMBER, To: normalizePhone(ownerPhone) || ownerPhone, Body: notify }).toString()
+      }).catch(() => {});
+    }
+
+    // Also email Eli so you can see engagement
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'onboarding@netifybuilds.com',
+        to: 'dolbeereli95@gmail.com',
+        subject: 'Campaign reply for ' + bizName,
+        html: '<div style="font-family:sans-serif;padding:24px;"><h3>Campaign reply</h3><p><strong>Client:</strong> ' + bizName + '</p><p><strong>From:</strong> ' + customerName + ' (' + fromPhone + ')</p><p><strong>Message:</strong> ' + bodyText + '</p></div>'
+      })
+    }).catch(() => {});
+
+    // No auto-reply to customer in Option 1 — owner handles it personally
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  } catch(e) {
+    console.error('[SMS Incoming Error]', e.message);
+    res.set('Content-Type', 'text/xml');
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+});
+
+// ── TOGGLE AI REPLY FOR A CLIENT ──
+app.post('/campaign-ai-reply/:bizKey', (req, res) => {
+  try {
+    const key = req.params.bizKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!clientInfo[key]) return res.status(404).json({ error: 'Client not found' });
+    clientInfo[key].campaignAiReplyEnabled = req.body.enabled === true;
+    debouncedSave('client_info.json', clientInfo);
+    res.json({ success: true, enabled: clientInfo[key].campaignAiReplyEnabled });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
 // ══════════════════════════════════════════════════════
 // AI PHONE SYSTEM
 // ══════════════════════════════════════════════════════
 
-const BACKEND_URL = process.env.BACKEND_URL || 'https://botbuilder-backend-production.up.railway.app';
+// BACKEND_URL already declared above
 
 // Helper: provision a Twilio phone number for a client
 async function provisionPhoneNumber(bizKey, areaCode) {
@@ -3592,25 +3734,14 @@ app.post('/voice/transcribe/:bizKey', async (req, res) => {
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: 'You are analyzing a voicemail left for a service business called ' + (client.bizName || 'the business') + '. Classify it and summarize it in one text message to the owner. Be concise.
-
-Classify as one of: CUSTOMER (real customer with a need), VENDOR (trying to sell something), SPAM (robocall or junk), UNKNOWN.
-
-Respond in this exact format:
-TYPE: [type]
-SUMMARY: [1-2 sentence summary of what they want, their name and number if mentioned]
-ACTION: [what the owner should do, e.g. "Call back today" or "Ignore"]
-
-Voicemail transcript:
-' + transcript
+        content: 'You are analyzing a voicemail left for ' + (client.bizName || 'the business') + '. Classify as CUSTOMER, VENDOR, SPAM, or UNKNOWN. Respond in format TYPE: [type] then SUMMARY: [summary with their name and number] then ACTION: [what owner should do]. Transcript: ' + transcript
       }]
     });
 
     const analysis = response.content[0].text;
     const typeMatch = analysis.match(/TYPE:\s*(\w+)/);
-    const summaryMatch = analysis.match(/SUMMARY:\s*(.+?)(?=
-ACTION:|$)/s);
-    const actionMatch = analysis.match(/ACTION:\s*(.+)/);
+    const summaryMatch = analysis.match(/SUMMARY:\s*(.+?)(?=ACTION:|$)/s);
+    const actionMatch = analysis.match(/ACTION:\s*(.+)/s);
 
     const callType = typeMatch ? typeMatch[1].toUpperCase() : 'UNKNOWN';
     const summary = summaryMatch ? summaryMatch[1].trim() : transcript.substring(0, 100);
