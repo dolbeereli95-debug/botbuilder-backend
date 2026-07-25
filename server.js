@@ -216,6 +216,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 });
 
 app.use(express.json({ limit: '50kb' }));
+app.use(express.urlencoded({ extended: true, limit: '50kb' })); // required for Twilio webhook form data
 
 // ── RATE LIMITER — max 30 /chat requests per IP per hour ──
 const rateLimitMap = {};
