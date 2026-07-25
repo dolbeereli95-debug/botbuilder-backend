@@ -3421,6 +3421,20 @@ app.post('/campaign-ai-reply/:bizKey', (req, res) => {
 });
 
 
+
+// TEMPORARY TEST ENDPOINT - isolates speech recognition issue
+app.post('/voice/test-speech', (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="/voice/test-speech-result" method="POST" input="speech" timeout="10" speechTimeout="auto" language="en-US"><Say>Say anything after the beep.</Say></Gather><Say>No gather triggered.</Say></Response>');
+});
+
+app.post('/voice/test-speech-result', (req, res) => {
+  console.log('[TEST SPEECH RESULT]', JSON.stringify(req.body));
+  const speech = req.body.SpeechResult || 'NOTHING CAPTURED';
+  res.set('Content-Type', 'text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>You said: ' + speech + '</Say></Response>');
+});
+
 // ══════════════════════════════════════════════════════
 // AI PHONE SYSTEM
 // ══════════════════════════════════════════════════════
