@@ -1306,6 +1306,21 @@ app.post('/signup', async (req, res) => {
        googleReviewLink: googleReviewLink || '',
        campaignListSize: campaignListSize || '',
        campaignListFormat: campaignListFormat || '',
+       websiteDetails: (function() {
+         if (!req.body.websiteIndustry && !req.body.websiteCurrent && !req.body.websiteDomain && !req.body.websitePages) return null;
+         var pages = req.body.websitePages;
+         if (typeof pages === 'string') pages = [pages];
+         return {
+           industry: req.body.websiteIndustry || '',
+           currentSite: req.body.websiteCurrent || '',
+           ownsDomain: req.body.websiteDomain || '',
+           pages: pages || [],
+           branding: req.body.websiteBranding || '',
+           inspiration: req.body.websiteInspiration || '',
+           notes: req.body.websiteNotes || ''
+         };
+       })(),
+       websitePaid: false,
        campaignContacts: (function() {
          var raw = req.body.campaignContactsRaw || '';
          if (!raw.trim()) return [];
